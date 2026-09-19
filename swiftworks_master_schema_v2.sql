@@ -1,10 +1,9 @@
 -- =============================================================================
--- SwiftWorks - MASTER SCHEMA  (v1.1 - reviewed & corrected)
+-- SwiftWorks - MASTER SCHEMA  (v1.2 - PostgreSQL-validated)
 -- Complete PostgreSQL / Supabase schema, assembled from 27 ordered migrations.
 --
 -- Target:   PostgreSQL 15+ (Supabase)
--- Run as:   psql -f swiftworks_master_schema.sql
---           or paste into the Supabase SQL editor (single transaction).
+-- Run as:   paste into the Supabase SQL Editor, or psql -f swiftworks_master_schema.sql
 --
 -- Contents (dependency order):
 --   00. 000_prerequisites
@@ -43,17 +42,19 @@
 --   * Auditing: created_at, created_by, updated_at, updated_by + audit_logs.
 --   * Helpers live in the private app schema, never exposed via PostgREST.
 --
--- v1.1 corrections applied (see docs/review-notes.md)
+-- v1.1 corrections
 --   1. app.slot_claim() EXECUTE revoked from PUBLIC/anon/authenticated.
 --   2. public.booking_housekeeping() EXECUTE revoked from PUBLIC/anon/authenticated.
 --   3. app.generate_booking_ref() EXECUTE revoked from PUBLIC/anon/authenticated.
---   4. authenticator role pinned to pgrst.db_schemas = 'public,graphql_public'
---      so the private app schema is unreachable over HTTP.
---   5. public.user_invitations created BEFORE handle_new_user(), whose
---      %rowtype is resolved at function-creation time.
---   6. booking_rate_limit lookup index leads on (bucket, occurred_at desc);
---      no non-immutable now() in the index predicate.
---   7. booking_idempotency given a tenant-scoped read policy for support use.
+--   4. authenticator pinned to pgrst.db_schemas = 'public,graphql_public'.
+--   5. public.user_invitations created BEFORE handle_new_user().
+--   6. booking_rate_limit lookup index leads on (bucket, occurred_at desc).
+--   7. booking_idempotency given a tenant-scoped read policy.
+--
+-- v1.2 corrections
+--   8. All // line comments converted to -- (PostgreSQL has no // comment
+--      syntax). Affected sections 21 and 22 only.
+--   9. set check_function_bodies = off retained for PL/pgSQL forward refs.
 --
 -- WARNING: Section 25 enables and FORCES row level security on every table in
 -- the public schema and revokes default grants from anon/authenticated. Run it
@@ -62,8 +63,6 @@
 
 set client_min_messages = warning;
 set check_function_bodies = off;
-
-
 
 
 -- =============================================================================
@@ -217,8 +216,6 @@ begin
   return null;
 end $$;
 
-
-
 -- =============================================================================
 -- SECTION 1 - AUDIT LOGS
 -- Source: 001_audit_logs.sql
@@ -251,8 +248,6 @@ create index if not exists audit_logs_operation_idx    on public.audit_logs (ope
 
 -- No audit trigger on audit_logs itself (would recurse).
 -- No updated_at / deleted_at: rows are immutable by policy in 090_rls.
-
-
 
 -- =============================================================================
 -- SECTION 2 - COMPANIES (tenant root)
@@ -311,8 +306,6 @@ drop trigger if exists trg_companies_auditlog on public.companies;
 create trigger trg_companies_auditlog after insert or update or delete on public.companies
   for each row execute function app.tg_write_audit_log();
 
-
-
 -- =============================================================================
 -- SECTION 3 - ROLES
 -- Source: 003_roles.sql
@@ -363,8 +356,6 @@ create trigger trg_roles_lock before update on public.roles
 drop trigger if exists trg_roles_auditlog on public.roles;
 create trigger trg_roles_auditlog after insert or update or delete on public.roles
   for each row execute function app.tg_write_audit_log();
-
-
 
 -- =============================================================================
 -- SECTION 4 - USERS
@@ -430,8 +421,6 @@ drop trigger if exists trg_users_auditlog on public.users;
 create trigger trg_users_auditlog after insert or update or delete on public.users
   for each row execute function app.tg_write_audit_log();
 
-
-
 -- =============================================================================
 -- SECTION 5 - USER ROLES
 -- Source: 005_user_roles.sql
@@ -476,8 +465,6 @@ create trigger trg_user_roles_lock before update on public.user_roles
 drop trigger if exists trg_user_roles_auditlog on public.user_roles;
 create trigger trg_user_roles_auditlog after insert or update or delete on public.user_roles
   for each row execute function app.tg_write_audit_log();
-
-
 
 -- =============================================================================
 -- SECTION 6 - PARTNERS
@@ -545,8 +532,6 @@ drop trigger if exists trg_partners_auditlog on public.partners;
 create trigger trg_partners_auditlog after insert or update or delete on public.partners
   for each row execute function app.tg_write_audit_log();
 
-
-
 -- =============================================================================
 -- SECTION 7 - TECHNICIANS
 -- Source: 007_technicians.sql
@@ -607,8 +592,6 @@ create trigger trg_technicians_lock before update on public.technicians
 drop trigger if exists trg_technicians_auditlog on public.technicians;
 create trigger trg_technicians_auditlog after insert or update or delete on public.technicians
   for each row execute function app.tg_write_audit_log();
-
-
 
 -- =============================================================================
 -- SECTION 8 - CUSTOMERS
@@ -676,8 +659,6 @@ create trigger trg_customers_lock before update on public.customers
 drop trigger if exists trg_customers_auditlog on public.customers;
 create trigger trg_customers_auditlog after insert or update or delete on public.customers
   for each row execute function app.tg_write_audit_log();
-
-
 
 -- =============================================================================
 -- SECTION 9 - JOBS
@@ -784,8 +765,6 @@ drop trigger if exists trg_jobs_auditlog on public.jobs;
 create trigger trg_jobs_auditlog after insert or update or delete on public.jobs
   for each row execute function app.tg_write_audit_log();
 
-
-
 -- =============================================================================
 -- SECTION 10 - JOB TECHNICIANS
 -- Source: 010_job_technicians.sql
@@ -838,8 +817,6 @@ create trigger trg_job_technicians_lock before update on public.job_technicians
 drop trigger if exists trg_job_technicians_auditlog on public.job_technicians;
 create trigger trg_job_technicians_auditlog after insert or update or delete on public.job_technicians
   for each row execute function app.tg_write_audit_log();
-
-
 
 -- =============================================================================
 -- SECTION 11 - QR CODES
@@ -916,8 +893,6 @@ drop trigger if exists trg_qr_codes_auditlog on public.qr_codes;
 create trigger trg_qr_codes_auditlog after insert or update or delete on public.qr_codes
   for each row execute function app.tg_write_audit_log();
 
-
-
 -- =============================================================================
 -- SECTION 12 - QR CODE SCANS
 -- Source: 012_qr_code_scans.sql
@@ -980,8 +955,6 @@ end $$;
 drop trigger if exists trg_qr_code_scans_count on public.qr_code_scans;
 create trigger trg_qr_code_scans_count after insert or delete on public.qr_code_scans
   for each row execute function app.tg_qr_scan_count();
-
-
 
 -- =============================================================================
 -- SECTION 13 - JOB SLOTS (capacity + slot_claim)
@@ -1120,8 +1093,6 @@ end $$;
 
 revoke all on function app.slot_claim(uuid, text) from public;
 grant execute on function app.slot_claim(uuid, text) to service_role;
-
-
 
 -- =============================================================================
 -- SECTION 14 - CUSTOMER BOOKINGS
@@ -1307,8 +1278,6 @@ drop trigger if exists trg_bookings_auditlog on public.customer_bookings;
 create trigger trg_bookings_auditlog after insert or update or delete on public.customer_bookings
   for each row execute function app.tg_write_audit_log();
 
-
-
 -- =============================================================================
 -- SECTION 15 - RATE CARDS
 -- Source: 015_rate_cards.sql
@@ -1416,8 +1385,6 @@ drop trigger if exists trg_rate_cards_auditlog on public.rate_cards;
 create trigger trg_rate_cards_auditlog after insert or update or delete on public.rate_cards
   for each row execute function app.tg_write_audit_log();
 
-
-
 -- =============================================================================
 -- SECTION 16 - RATE CARD ITEMS
 -- Source: 016_rate_card_items.sql
@@ -1481,8 +1448,6 @@ create trigger trg_rate_card_items_lock before update on public.rate_card_items
 drop trigger if exists trg_rate_card_items_auditlog on public.rate_card_items;
 create trigger trg_rate_card_items_auditlog after insert or update or delete on public.rate_card_items
   for each row execute function app.tg_write_audit_log();
-
-
 
 -- =============================================================================
 -- SECTION 17 - INVOICES
@@ -1609,8 +1574,6 @@ create trigger trg_invoices_lock before update on public.invoices
 drop trigger if exists trg_invoices_auditlog on public.invoices;
 create trigger trg_invoices_auditlog after insert or update or delete on public.invoices
   for each row execute function app.tg_write_audit_log();
-
-
 
 -- =============================================================================
 -- SECTION 18 - INVOICE ITEMS
@@ -1751,8 +1714,6 @@ drop trigger if exists trg_invoice_items_auditlog on public.invoice_items;
 create trigger trg_invoice_items_auditlog after insert or update or delete on public.invoice_items
   for each row execute function app.tg_write_audit_log();
 
-
-
 -- =============================================================================
 -- SECTION 19 - NOTIFICATIONS
 -- Source: 019_notifications.sql
@@ -1850,8 +1811,6 @@ drop trigger if exists trg_notifications_lock on public.notifications;
 create trigger trg_notifications_lock before update on public.notifications
   for each row execute function app.tg_lock_company_id();
 
-
-
 -- =============================================================================
 -- SECTION 20 - EMAIL ACCOUNTS (Microsoft Graph)
 -- Source: 020_email_accounts.sql
@@ -1934,15 +1893,10 @@ drop trigger if exists trg_email_accounts_auditlog on public.email_accounts;
 create trigger trg_email_accounts_auditlog after insert or update or delete on public.email_accounts
   for each row execute function app.tg_write_audit_log();
 
-
-
 -- =============================================================================
 -- SECTION 21 - EMAIL LOGS
 -- Source: 021_email_logs.sql
 -- =============================================================================
-
-// Migration 021 — email_logs
-// Per-message Microsoft Graph delivery record. No soft delete.
 
 begin;
 
@@ -2048,15 +2002,10 @@ create trigger trg_email_logs_account_count after insert or update on public.ema
   for each row when (new.status in ('sent','delivered'))
   execute function app.tg_email_account_count();
 
-
-
 -- =============================================================================
 -- SECTION 22 - SUBSCRIPTION PLANS
 -- Source: 022_subscription_plans.sql
 -- =============================================================================
-
-// Migration 022 — subscription_plans
-// Catalogue of SwiftWorks plans. Global (not tenant-scoped), Stripe-backed.
 
 begin;
 
@@ -2113,8 +2062,6 @@ create index if not exists subscription_plans_stripe_idx on public.subscription_
 drop trigger if exists trg_subscription_plans_audit on public.subscription_plans;
 create trigger trg_subscription_plans_audit before insert or update on public.subscription_plans
   for each row execute function app.tg_touch_audit();
-
-
 
 -- =============================================================================
 -- SECTION 23 - SUBSCRIPTIONS (Stripe)
@@ -2227,8 +2174,6 @@ create trigger trg_subscriptions_lock before update on public.subscriptions
 drop trigger if exists trg_subscriptions_auditlog on public.subscriptions;
 create trigger trg_subscriptions_auditlog after insert or update or delete on public.subscriptions
   for each row execute function app.tg_write_audit_log();
-
-
 
 -- =============================================================================
 -- SECTION 24 - AUTH ARCHITECTURE (invitations, signup, tenant bootstrap)
@@ -2440,8 +2385,6 @@ end $$;
 
 revoke all on function public.create_tenant(text, text, uuid, text) from public;
 grant execute on function public.create_tenant(text, text, uuid, text) to service_role;
-
-
 
 -- =============================================================================
 -- SECTION 25 - ROW LEVEL SECURITY
@@ -2681,8 +2624,6 @@ end $$;
 drop trigger if exists trg_booking_tech_guard on public.customer_bookings;
 create trigger trg_booking_tech_guard before update on public.customer_bookings
   for each row execute function app.tg_booking_tech_guard();
-
-
 
 -- =============================================================================
 -- SECTION 26 - PUBLIC BOOKING RPC
@@ -3363,8 +3304,6 @@ end $$;
 
 -- No policies on booking_idempotency: service_role (which bypasses RLS) is the
 -- only reader, and it has no need to read it outside the RPC.
-
-
 
 -- =============================================================================
 -- END OF MASTER SCHEMA
