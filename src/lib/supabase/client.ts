@@ -29,35 +29,40 @@ if (!supabaseAnonKey) {
  *
  * Never put the service-role key in frontend code: it bypasses RLS entirely
  * and would expose every tenant.
+ *
+ * The generic is applied via `as` rather than `createClient<Database>(...)`.
+ * The generated-schema slot on createClient is constrained by the library's
+ * internal DatabaseWithoutInternals shape, which a hand-written Database
+ * interface does not satisfy. Casting the result keeps `supabase` fully typed
+ * for consumers while leaving the call itself inference-driven.
+ *
+ * Regenerating with `supabase gen types typescript --linked` produces a shape
+ * the generic accepts natively, at which point the cast can move back inline.
  */
-export const supabase: TypedSupabaseClient = createClient<Database>(
-  supabaseUrl,
-  supabaseAnonKey,
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      // Required for the Supabase email-confirmation and password-reset
-      // redirects to resolve the session from the URL fragment.
-      detectSessionInUrl: true,
-      storageKey: 'swiftworks.auth',
-      flowType: 'pkce',
-    },
-    global: {
-      headers: {
-        'x-application-name': 'swiftworks-web',
-      },
-    },
-    db: {
-      schema: 'public',
-    },
-    realtime: {
-      params: {
-        eventsPerSecond: 5,
-      },
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    // Required for the Supabase email-confirmation and password-reset
+    // redirects to resolve the session from the URL fragment.
+    detectSessionInUrl: true,
+    storageKey: 'swiftworks.auth',
+    flowType: 'pkce',
+  },
+  global: {
+    headers: {
+      'x-application-name': 'swiftworks-web',
     },
   },
-);
+  db: {
+    schema: 'public',
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 5,
+    },
+  },
+}) as TypedSupabaseClient;
 
 /** Thrown by query helpers so callers can branch on status vs message. */
 export class SupabaseError extends Error {
