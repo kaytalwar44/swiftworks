@@ -5,6 +5,7 @@ import {
   CalendarCheck,
   CalendarDays,
   DollarSign,
+  Gauge
   Loader2,
   Plus,
   QrCode,
