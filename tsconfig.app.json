@@ -9,12 +9,16 @@
     "jsx": "react-jsx",
     "types": ["vite/client", "node"],
 
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": true,
+
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "isolatedModules": true,
     "resolveJsonModule": true,
-    "noEmit": true,
     "skipLibCheck": true,
 
     "strict": true,
