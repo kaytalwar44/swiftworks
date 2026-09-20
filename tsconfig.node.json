@@ -7,11 +7,15 @@
     "moduleResolution": "bundler",
     "types": ["node"],
 
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": true,
+
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "isolatedModules": true,
-    "noEmit": true,
     "skipLibCheck": true,
 
     "strict": true,
