@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en-AU" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <title>SwiftWorks</title>
+    <meta
+      name="description"
+      content="SwiftWorks — installation scheduling, resident booking and technician pay runs."
+    />
+
+    <!-- The operator console is behind auth; keep it out of search results. -->
+    <meta name="robots" content="noindex, nofollow" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- Supabase auth callbacks and the QR booking page talk to the API origin
+         before app code loads, so warm the connection early. -->
+    <link rel="preconnect" href="[fonts.googleapis.com](https://fonts.googleapis.com)" />
+    <link rel="preconnect" href="[fonts.gstatic.com](https://fonts.gstatic.com)" crossorigin />
+  </head>
+  <body class="h-full bg-background font-sans text-foreground antialiased">
+    <div id="root" class="min-h-full"></div>
+    <noscript>
+      SwiftWorks requires JavaScript. Please enable it to continue.
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
