@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router';
 import { Bell, LogOut, Menu, Search, User } from 'lucide-react';
 
-import { supabase } from '@/lib/supabase/client';
+import { unwrap } from '@/lib/supabase/client';
 import { useAuth } from '@/features/auth/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import {
