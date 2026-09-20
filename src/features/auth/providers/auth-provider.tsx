@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { Session, User as AuthUser } from '@supabase/supabase-js';
 
-import { supabase, unwrap, SupabaseError } from '@/lib/supabase/client';
+import { supabase } from '@/lib/supabase/client';
 import type {
   CompanyRow,
   RoleRow,
