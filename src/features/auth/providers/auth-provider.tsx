@@ -160,10 +160,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       };
     if (assignmentError) throw assignmentError;
 if (requestId !== requestIdRef.current) return;
-
-const now = Date.now();
-const typedAssignments: UserRoleAssignment[] =
-  assignments ?? [];
 const now = Date.now();
 
 const typedAssignments: UserRoleAssignment[] =
