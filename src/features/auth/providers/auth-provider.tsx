@@ -165,9 +165,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (requestId !== requestIdRef.current) return;
 
       const now = Date.now();
-      const roleIds = (assignments ?? [])
-        .filter((a) => !a.expires_at || new Date(a.expires_at).getTime() > now)
-        .map((a) => a.role_id);
+      const typedAssignments: UserRoleAssignment[] = assignments ?? [];
+
+const roleIds = typedAssignments
+  .filter(
+    (a) =>
+      !a.expires_at ||
+      new Date(a.expires_at).getTime() > now,
+  )
+  .map((a) => a.role_id);
 
       if (roleIds.length === 0) {
         setRoles([]);
