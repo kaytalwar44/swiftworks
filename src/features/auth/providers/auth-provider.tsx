@@ -143,29 +143,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       } else {
         setCompany(null);
       }
-
-      // user_roles carries the role ids; roles carries the permission arrays.
-      // The row shape is asserted here because the cast client cannot infer it
-      // from the select string — see the note in lib/supabase/client.ts.
-      type UserRoleAssignment = {
-        role_id: string;
-        expires_at: string | null;
-      };
-
-      const { data: assignments, error: assignmentError } = (await supabase
-        .from('user_roles')
-        .select('role_id, expires_at')
-        .eq('user_id', id)
-        .is('deleted_at', null)) as {
-        data: UserRoleAssignment[] | null;
-        error: { message: string } | null;
-      };
-
-      if (assignmentError) throw assignmentError;
-      if (requestId !== requestIdRef.current) return;
-
-      const now = Date.now();
-      const typedAssignments: UserRoleAssignment[] = assignments ?? [];
       // user_roles carries the role ids; roles carries the permission arrays.
       // The row shape is asserted here because the cast client cannot infer it
       // from the select string — see the note in lib/supabase/client.ts.
