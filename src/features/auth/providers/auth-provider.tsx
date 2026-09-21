@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { Session, User as AuthUser } from '@supabase/supabase-js';
 
-import { supabase } from '@/lib/supabase/client';
+import { supabase, SupabaseError } from '@/lib/supabase/client';
 import type {
   CompanyRow,
   RoleRow,
@@ -144,7 +144,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setCompany(null);
       }
 
-            // user_roles carries the role ids; roles carries the permission arrays.
+      // user_roles carries the role ids; roles carries the permission arrays.
       // The row shape is asserted here because the cast client cannot infer it
       // from the select string — see the note in lib/supabase/client.ts.
       type UserRoleAssignment = {
@@ -173,6 +173,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setRoles([]);
         return;
       }
+
       const { data: roleRows, error: roleError } = await supabase
         .from('roles')
         .select('*')
