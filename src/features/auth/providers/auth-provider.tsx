@@ -166,7 +166,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       const now = Date.now();
       const typedAssignments: UserRoleAssignment[] = assignments ?? [];
-
+const typedAssignments: UserRoleAssignment[] = assignments ?? [];
 const roleIds = typedAssignments
   .filter(
     (a) =>
@@ -179,7 +179,6 @@ const roleIds = typedAssignments
         setRoles([]);
         return;
       }
-
       const { data: roleRows, error: roleError } = await supabase
         .from('roles')
         .select('*')
