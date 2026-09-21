@@ -143,13 +143,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
       } else {
         setCompany(null);
       }
-      // user_roles carries the role ids; roles carries the permission arrays.
+            // user_roles carries the role ids; roles carries the permission arrays.
       // The row shape is asserted here because the cast client cannot infer it
       // from the select string — see the note in lib/supabase/client.ts.
       type UserRoleAssignment = {
         role_id: string;
         expires_at: string | null;
       };
+
       const { data: assignments, error: assignmentError } = (await supabase
         .from('user_roles')
         .select('role_id, expires_at')
@@ -158,25 +159,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
         data: UserRoleAssignment[] | null;
         error: { message: string } | null;
       };
-    if (assignmentError) throw assignmentError;
-if (requestId !== requestIdRef.current) return;
-const now = Date.now();
 
-const typedAssignments: UserRoleAssignment[] =
-  assignments ?? [];
+      if (assignmentError) throw assignmentError;
+      if (requestId !== requestIdRef.current) return;
 
-const roleIds = typedAssignments
-  .filter(
-    (a) =>
-      !a.expires_at ||
-      new Date(a.expires_at).getTime() > now,
-  )
-  .map((a) => a.role_id);
+      const now = Date.now();
+      const roleIds = (assignments ?? [])
+        .filter((a) => !a.expires_at || new Date(a.expires_at).getTime() > now)
+        .map((a) => a.role_id);
 
-if (roleIds.length === 0) {
-  setRoles([]);
-  return;
-}
+      if (roleIds.length === 0) {
+        setRoles([]);
+        return;
+      }
       const { data: roleRows, error: roleError } = await supabase
         .from('roles')
         .select('*')
