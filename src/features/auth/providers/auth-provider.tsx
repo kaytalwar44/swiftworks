@@ -162,10 +162,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 if (requestId !== requestIdRef.current) return;
 
 const now = Date.now();
-
-const typedAssignments =
-  (assignments ?? []) as UserRoleAssignment[];
-
+const typedAssignments: UserRoleAssignment[] =
+  assignments ?? [];
 const roleIds = typedAssignments
   .filter(
     (a) =>
