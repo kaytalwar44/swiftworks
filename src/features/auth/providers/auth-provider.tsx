@@ -166,14 +166,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       const now = Date.now();
       const typedAssignments: UserRoleAssignment[] = assignments ?? [];
-const roleIds = typedAssignments
-  .filter(
-    (a) =>
-      !a.expires_at ||
-      new Date(a.expires_at).getTime() > now,
-  )
-  .map((a) => a.role_id);
-
+      // user_roles carries the role ids; roles carries the permission arrays.
+      // The row shape is asserted here because the cast client cannot infer it
+      // from the select string — see the note in lib/supabase/client.ts.
+      type UserRoleAssignment = {
+        role_id: string;
+        expires_at: string | null;
+      };
+      const { data: assignments, error: assignmentError } = (await supabase
+        .from('user_roles')
+        .select('role_id, expires_at')
+        .eq('user_id', id)
+        .is('deleted_at', null)) as {
+        data: UserRoleAssignment[] | null;
+        error: { message: string } | null;
+      };
+      if (assignmentError) throw assignmentError;
+      if (requestId !== requestIdRef.current) return;
+      const now = Date.now();
+      const roleIds = (assignments ?? [])
+        .filter((a) => !a.expires_at || new Date(a.expires_at).getTime() > now)
+        .map((a) => a.role_id);
       if (roleIds.length === 0) {
         setRoles([]);
         return;
@@ -183,14 +196,11 @@ const roleIds = typedAssignments
         .select('*')
         .in('id', roleIds)
         .is('deleted_at', null);
-
       if (roleError) throw roleError;
       if (requestId !== requestIdRef.current) return;
-
       setRoles((roleRows as unknown as RoleRow[]) ?? []);
     } catch (caught) {
       if (requestId !== requestIdRef.current) return;
-
       // A failed load must not leave a half-populated identity behind.
       setUser(null);
       setCompany(null);
@@ -202,7 +212,6 @@ const roleIds = typedAssignments
       );
     }
   }, []);
-
   /** Clears every identity field. Used by sign-out and session loss. */
   const clearIdentity = useCallback(() => {
     requestIdRef.current += 1;
@@ -211,49 +220,39 @@ const roleIds = typedAssignments
     setRoles([]);
     setError(null);
   }, []);
-
   const refresh = useCallback(async () => {
     const { data } = await supabase.auth.getUser();
     if (data.user) {
       await loadProfile(data.user.id);
     }
   }, [loadProfile]);
-
   const signOut = useCallback(async () => {
     clearIdentity();
     setAuthUser(null);
     await supabase.auth.signOut();
   }, [clearIdentity]);
-
   // ---------------------------------------------------------------------------
   // Session bootstrap and change subscription
   // ---------------------------------------------------------------------------
   useEffect(() => {
     let cancelled = false;
-
     async function bootstrap() {
       const { data, error: sessionError } = await supabase.auth.getSession();
-
       if (cancelled) return;
-
       if (sessionError) {
         setError(sessionError);
         setIsLoading(false);
         return;
       }
-
       const session: Session | null = data.session;
       setAuthUser(session?.user ?? null);
 
       if (session?.user) {
         await loadProfile(session.user.id);
       }
-
       if (!cancelled) setIsLoading(false);
     }
-
     void bootstrap();
-
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
@@ -261,15 +260,12 @@ const roleIds = typedAssignments
       // own token-refresh lock, and awaiting a query here deadlocks the client.
       queueMicrotask(() => {
         if (cancelled) return;
-
         setAuthUser(session?.user ?? null);
-
         if (event === 'SIGNED_OUT' || !session?.user) {
           clearIdentity();
           setIsLoading(false);
           return;
         }
-
         // TOKEN_REFRESHED fires on a timer; the profile has not changed, so
         // there is nothing to reload.
         if (event === 'TOKEN_REFRESHED') return;
@@ -277,7 +273,6 @@ const roleIds = typedAssignments
         void loadProfile(session.user.id).finally(() => setIsLoading(false));
       });
     });
-
     return () => {
       cancelled = true;
       subscription.unsubscribe();
@@ -287,7 +282,6 @@ const roleIds = typedAssignments
   // ---------------------------------------------------------------------------
   // Derived values
   // ---------------------------------------------------------------------------
-
   const permissions = useMemo(() => {
     const set = new Set<string>();
     for (const role of roles) {
@@ -296,7 +290,6 @@ const roleIds = typedAssignments
     }
     return Array.from(set).sort();
   }, [roles]);
-
   const hasPermission = useCallback(
     (permission: string) => {
       // Platform admins bypass every tenant check, matching
