@@ -12,6 +12,7 @@ import {
   Users,
 } from 'lucide-react';
 import { supabase, unwrap } from '@/lib/supabase/client';
+import type { DashboardSummary } from '@/lib/supabase/database.types';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/features/auth/providers/auth-provider';
 import { Button } from '@/components/ui/button';
