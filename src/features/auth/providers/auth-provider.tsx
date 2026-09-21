@@ -158,16 +158,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
         data: UserRoleAssignment[] | null;
         error: { message: string } | null;
       };
-      if (assignmentError) throw assignmentError;
-      if (requestId !== requestIdRef.current) return;
-      const now = Date.now();
-      const roleIds = (assignments ?? [])
-        .filter((a) => !a.expires_at || new Date(a.expires_at).getTime() > now)
-        .map((a) => a.role_id);
-      if (roleIds.length === 0) {
-        setRoles([]);
-        return;
-      }
+    if (assignmentError) throw assignmentError;
+if (requestId !== requestIdRef.current) return;
+
+const now = Date.now();
+
+const typedAssignments =
+  (assignments ?? []) as UserRoleAssignment[];
+
+const roleIds = typedAssignments
+  .filter(
+    (a) =>
+      !a.expires_at ||
+      new Date(a.expires_at).getTime() > now,
+  )
+  .map((a) => a.role_id);
+
+if (roleIds.length === 0) {
+  setRoles([]);
+  return;
+}
       const { data: roleRows, error: roleError } = await supabase
         .from('roles')
         .select('*')
