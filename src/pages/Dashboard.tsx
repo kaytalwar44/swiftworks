@@ -75,11 +75,11 @@ export default function Dashboard() {
     );
   }
 
-  if (error) {
+    if (!data) {
     return (
       <Card>
-        <CardContent className="p-6 text-sm text-destructive">
-          Could not load the dashboard. {(error as Error).message}
+        <CardContent className="p-6 text-sm text-muted-foreground">
+          No dashboard data available.
         </CardContent>
       </Card>
     );
