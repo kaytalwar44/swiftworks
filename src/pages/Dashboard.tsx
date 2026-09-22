@@ -56,7 +56,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { company, hasPermission } = useAuth();
 
-  const { data, isPending, error } = useQuery({
+  const { data, isPending } = useQuery({
     queryKey: ['dashboard', 'summary'],
     queryFn: async () => {
       // dashboard_summary() is a SECURITY DEFINER RPC from Phase 5. It
@@ -87,7 +87,12 @@ export default function Dashboard() {
 
   const summary = data;
 
-  return (
+if (!summary) {
+  return null;
+}
+
+return (
+
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
