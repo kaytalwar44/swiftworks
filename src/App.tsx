@@ -7,25 +7,26 @@ import { ProtectedRoute } from '@/features/auth/components/protected-route';
 import { AuthProvider } from '@/features/auth/providers/auth-provider';
 import { NotFoundPage } from '@/pages/not-found';
 
-// Route-level splitting: a resident scanning a QR never downloads the operator
-// bundle, and an operator never downloads the booking wizard.
-//
-// Only routes with a real file are declared below. A lazy import to a
-// non-existent path compiles cleanly and 404s at navigation, so absent routes
-// are removed rather than stubbed — add each one back as its page lands.
-
-// ---------- Auth ----------
 const LoginPage = lazy(() => import('@/pages/Login'));
-
-// ---------- Operator console ----------
 const DashboardPage = lazy(() => import('@/pages/Dashboard'));
+
+const JobsPage = lazy(() => import('@/pages/Jobs'));
+const BookingsPage = lazy(() => import('@/pages/Bookings'));
+const SchedulePage = lazy(() => import('@/pages/Schedule'));
+const CustomersPage = lazy(() => import('@/pages/Customers'));
+const PartnersPage = lazy(() => import('@/pages/Partners'));
+const TechniciansPage = lazy(() => import('@/pages/Technicians'));
+const RateCardsPage = lazy(() => import('@/pages/RateCards'));
+const InvoicesPage = lazy(() => import('@/pages/Invoices'));
+const TeamPage = lazy(() => import('@/pages/Team'));
+const SettingsPage = lazy(() => import('@/pages/Settings'));
 
 export default function App() {
   return (
     <AuthProvider>
       <Suspense fallback={<PageSkeleton />}>
         <Routes>
-          {/* ---------- Public: no auth, no operator chrome ---------- */}
+          {/* ---------- Public ---------- */}
           <Route path="/login" element={<LoginPage />} />
 
           {/* ---------- Authenticated operator console ---------- */}
@@ -38,6 +39,20 @@ export default function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
+
+            <Route path="/jobs" element={<JobsPage />} />
+            <Route path="/bookings" element={<BookingsPage />} />
+            <Route path="/schedule" element={<SchedulePage />} />
+
+            <Route path="/customers" element={<CustomersPage />} />
+            <Route path="/partners" element={<PartnersPage />} />
+            <Route path="/technicians" element={<TechniciansPage />} />
+
+            <Route path="/rates" element={<RateCardsPage />} />
+            <Route path="/invoices" element={<InvoicesPage />} />
+
+            <Route path="/team" element={<TeamPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Route>
 
           <Route path="*" element={<NotFoundPage />} />
