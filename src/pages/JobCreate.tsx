@@ -11,7 +11,7 @@ export default function JobCreatePage() {
   const [jobNumber, setJobNumber] = useState('');
   const [title, setTitle] = useState('');
   const [reference, setReference] = useState('');
-  const [priority, setPriority] = useState('Normal');
+  const [priority, setPriority] = useState(2);
 
   const [siteName, setSiteName] = useState('');
   const [addressLine1, setAddressLine1] = useState('');
@@ -107,13 +107,13 @@ export default function JobCreatePage() {
               className="rounded border p-2"
               value={priority}
               onChange={(e) =>
-                setPriority(e.target.value)
-              }
+  setPriority(Number(e.target.value))
+}
             >
-              <option>Low</option>
-              <option>Normal</option>
-              <option>High</option>
-              <option>Urgent</option>
+              <option value={1}>Low</option>
+              <option value={2}>Normal</option>
+              <option value={3}>High</option>
+              <option value={4}>Urgent</option>
             </select>
           </div>
         </div>
