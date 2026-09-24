@@ -1,65 +1,101 @@
-import { useNavigate } from 'react-router';
+import { useEffect, useState } from 'react';
 import { Users } from 'lucide-react';
 
-import { useAuth } from '@/features/auth/providers/auth-provider';
-import { Button } from '@/components/ui/button';
+import { supabase } from '@/lib/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
+type Customer = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  phone: string | null;
+  unit_number: string | null;
+};
+
 export default function Customers() {
-  const navigate = useNavigate();
-  const { company } = useAuth();
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadCustomers() {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('id, full_name, email, phone, unit_number')
+        .order('full_name');
+
+      if (!error && data) {
+        setCustomers(data);
+      }
+
+      setLoading(false);
+    }
+
+    loadCustomers();
+  }, []);
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Customers</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Customers
+        </h1>
         <p className="text-sm text-muted-foreground">
-          Residents and end customers
-          {company?.legal_name ? ` · ${company.legal_name}` : ''}
+          Customer directory
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {['Total customers', 'New this month', 'Repeat bookings', 'No shows'].map(
-          (label) => (
-            <Card key={label}>
-              <CardContent className="flex items-start justify-between gap-4 p-5">
-                <div className="min-w-0 space-y-1">
-                  <p className="text-sm text-muted-foreground">{label}</p>
-                  <p className="text-2xl font-semibold tabular-nums text-muted-foreground">
-                    —
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Not yet wired up
-                  </p>
-                </div>
-                <span className="rounded-lg bg-primary/10 p-2 text-primary">
-                  <Users className="h-5 w-5" />
-                </span>
-              </CardContent>
-            </Card>
-          ),
-        )}
-      </div>
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center gap-3">
+            <Users className="h-5 w-5" />
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Total Customers
+              </p>
+              <p className="text-3xl font-bold">
+                {customers.length}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Customer directory</CardTitle>
+          <CardTitle>Customer List</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-sm font-medium">Coming soon</p>
-          <p className="text-sm text-muted-foreground">
-            Search across name, phone, email and unit number — the{' '}
-            <code>search_customers</code> RPC and its trigram indexes are already
-            deployed.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate('/dashboard')}
-          >
-            Back to dashboard
-          </Button>
+
+        <CardContent>
+          {loading ? (
+            <p>Loading customers...</p>
+          ) : customers.length === 0 ? (
+            <p>No customers found.</p>
+          ) : (
+            <div className="space-y-3">
+              {customers.map((customer) => (
+                <div
+                  key={customer.id}
+                  className="rounded border p-4"
+                >
+                  <div className="font-medium">
+                    {customer.full_name || 'Unknown'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    {customer.email || 'No email'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    {customer.phone || 'No phone'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    Unit: {customer.unit_number || '-'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
