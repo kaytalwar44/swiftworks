@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router';
+import JobCreatePage from './pages/JobCreate';
 
 import { AppShell } from '@/layouts/app-shell';
 import { PageSkeleton } from '@/components/shared/page-skeleton';
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
 
             <Route path="/jobs" element={<JobsPage />} />
+            <Route path="/jobs/new" element={<JobCreatePage />} />
             <Route path="/bookings" element={<BookingsPage />} />
             <Route path="/schedule" element={<SchedulePage />} />
 
