@@ -1,71 +1,115 @@
-import { useNavigate } from 'react-router';
-import { Building2, Plus } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Building2 } from 'lucide-react';
 
-import { useAuth } from '@/features/auth/providers/auth-provider';
-import { Button } from '@/components/ui/button';
+import { supabase } from '@/lib/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
+type Job = {
+  id: string;
+  job_number: string | null;
+  title: string | null;
+  status: string | null;
+  priority: string | null;
+  site_name: string | null;
+  suburb: string | null;
+};
+
 export default function Jobs() {
-  const navigate = useNavigate();
-  const { company, hasPermission } = useAuth();
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadJobs() {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(
+          'id, job_number, title, status, priority, site_name, suburb'
+        )
+        .order('job_number');
+
+      if (!error && data) {
+        setJobs(data);
+      }
+
+      setLoading(false);
+    }
+
+    loadJobs();
+  }, []);
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Jobs</h1>
-          <p className="text-sm text-muted-foreground">
-            Installation campaigns across your partner sites
-            {company?.legal_name ? ` · ${company.legal_name}` : ''}
-          </p>
-        </div>
-
-        {hasPermission('jobs.write') && (
-          <Button disabled>
-            <Plus className="mr-2 h-4 w-4" />
-            New job
-          </Button>
-        )}
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {['Draft', 'Published', 'In progress', 'Completed'].map((label) => (
-          <Card key={label}>
-            <CardContent className="flex items-start justify-between gap-4 p-5">
-              <div className="min-w-0 space-y-1">
-                <p className="text-sm text-muted-foreground">{label}</p>
-                <p className="text-2xl font-semibold tabular-nums text-muted-foreground">
-                  —
-                </p>
-                <p className="text-xs text-muted-foreground">Not yet wired up</p>
-              </div>
-              <span className="rounded-lg bg-primary/10 p-2 text-primary">
-                <Building2 className="h-5 w-5" />
-              </span>
-            </CardContent>
-          </Card>
-        ))}
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Jobs
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Installation campaigns and work orders
+        </p>
       </div>
 
       <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center gap-3">
+            <Building2 className="h-5 w-5" />
+
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Total Jobs
+              </p>
+
+              <p className="text-3xl font-bold">
+                {jobs.length}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
         <CardHeader>
-          <CardTitle className="text-base">Job list</CardTitle>
+          <CardTitle>Job List</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-sm font-medium">Coming soon</p>
-          <p className="text-sm text-muted-foreground">
-            Job listing, slot generation and QR publishing land in the next
-            build. The <code>jobs</code> table and the Phase 5 RPCs
-            (<code>create_job</code>, <code>generate_slots</code>,{' '}
-            <code>publish_job</code>) are already deployed and ready to wire in.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate('/dashboard')}
-          >
-            Back to dashboard
-          </Button>
+
+        <CardContent>
+          {loading ? (
+            <p>Loading jobs...</p>
+          ) : jobs.length === 0 ? (
+            <p>No jobs found.</p>
+          ) : (
+            <div className="space-y-3">
+              {jobs.map((job) => (
+                <div
+                  key={job.id}
+                  className="rounded border p-4"
+                >
+                  <div className="font-medium">
+                    {job.title || 'Untitled Job'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    Job #: {job.job_number || '-'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    Status: {job.status || '-'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    Priority: {job.priority || '-'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    Site: {job.site_name || '-'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    Suburb: {job.suburb || '-'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
