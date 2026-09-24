@@ -1,65 +1,111 @@
-import { useNavigate } from 'react-router';
+import { useEffect, useState } from 'react';
 import { HardHat } from 'lucide-react';
 
-import { useAuth } from '@/features/auth/providers/auth-provider';
-import { Button } from '@/components/ui/button';
+import { supabase } from '@/lib/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
+type Technician = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  phone: string | null;
+  employment_type: string | null;
+  max_installs_per_day: number | null;
+};
+
 export default function Technicians() {
-  const navigate = useNavigate();
-  const { company } = useAuth();
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadTechnicians() {
+      const { data, error } = await supabase
+        .from('technicians')
+        .select(
+          'id, full_name, email, phone, employment_type, max_installs_per_day'
+        )
+        .order('full_name');
+
+      if (!error && data) {
+        setTechnicians(data);
+      }
+
+      setLoading(false);
+    }
+
+    loadTechnicians();
+  }, []);
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Technicians</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Technicians
+        </h1>
         <p className="text-sm text-muted-foreground">
           Field staff performing installations
-          {company?.legal_name ? ` · ${company.legal_name}` : ''}
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {['Available', 'Assigned today', 'Installs this week', 'Rate cards'].map(
-          (label) => (
-            <Card key={label}>
-              <CardContent className="flex items-start justify-between gap-4 p-5">
-                <div className="min-w-0 space-y-1">
-                  <p className="text-sm text-muted-foreground">{label}</p>
-                  <p className="text-2xl font-semibold tabular-nums text-muted-foreground">
-                    —
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Not yet wired up
-                  </p>
-                </div>
-                <span className="rounded-lg bg-primary/10 p-2 text-primary">
-                  <HardHat className="h-5 w-5" />
-                </span>
-              </CardContent>
-            </Card>
-          ),
-        )}
-      </div>
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center gap-3">
+            <HardHat className="h-5 w-5" />
+
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Total Technicians
+              </p>
+
+              <p className="text-3xl font-bold">
+                {technicians.length}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Technician directory</CardTitle>
+          <CardTitle>Technician Directory</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-sm font-medium">Coming soon</p>
-          <p className="text-sm text-muted-foreground">
-            Assignment, availability and workload views. A technician signing in
-            sees only their own rows, enforced by the Phase 4 restrictive
-            policies rather than by the UI.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate('/dashboard')}
-          >
-            Back to dashboard
-          </Button>
+
+        <CardContent>
+          {loading ? (
+            <p>Loading technicians...</p>
+          ) : technicians.length === 0 ? (
+            <p>No technicians found.</p>
+          ) : (
+            <div className="space-y-3">
+              {technicians.map((tech) => (
+                <div
+                  key={tech.id}
+                  className="rounded border p-4"
+                >
+                  <div className="font-medium">
+                    {tech.full_name || 'Unknown'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    {tech.email || 'No email'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    {tech.phone || 'No phone'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    Employment: {tech.employment_type || '-'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    Max installs/day:{' '}
+                    {tech.max_installs_per_day ?? '-'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
