@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase/client';
 
 export default function JobCreatePage() {
   const navigate = useNavigate();
+  const [startDate, setStartDate] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,12 +75,19 @@ export default function JobCreatePage() {
           <h2 className="mb-4 text-lg font-semibold">Job Details</h2>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <input
-              className="rounded border p-2"
-              placeholder="Job Number"
-              value={jobNumber}
-              onChange={(e) => setJobNumber(e.target.value)}
-            />
+<input
+className="rounded border p-2"
+placeholder="Job Number"
+value={jobNumber}
+onChange={(e) => setJobNumber(e.target.value)}
+/>
+ 
+<input
+type="date"
+className="rounded border p-2"
+value={startDate}
+onChange={(e) => setStartDate(e.target.value)}
+/>
 
             <input
               className="rounded border p-2"
