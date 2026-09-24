@@ -1,61 +1,115 @@
-import { useNavigate } from 'react-router';
-import { CalendarCheck } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { CalendarDays } from 'lucide-react';
 
-import { useAuth } from '@/features/auth/providers/auth-provider';
-import { Button } from '@/components/ui/button';
+import { supabase } from '@/lib/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
+type Booking = {
+  id: string;
+  booking_ref: string | null;
+  status: string | null;
+  full_name: string | null;
+  phone: string | null;
+  email: string | null;
+  unit_number: string | null;
+};
+
 export default function Bookings() {
-  const navigate = useNavigate();
-  const { company } = useAuth();
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadBookings() {
+      const { data, error } = await supabase
+        .from('customer_bookings')
+        .select(
+          'id, booking_ref, status, full_name, phone, email, unit_number'
+        )
+        .order('booking_ref');
+
+      if (!error && data) {
+        setBookings(data);
+      }
+
+      setLoading(false);
+    }
+
+    loadBookings();
+  }, []);
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Bookings</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Bookings
+        </h1>
         <p className="text-sm text-muted-foreground">
-          Resident slots claimed from a QR code
-          {company?.legal_name ? ` · ${company.legal_name}` : ''}
+          Customer booking management
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {['Today', 'Confirmed', 'Completed', 'No show'].map((label) => (
-          <Card key={label}>
-            <CardContent className="flex items-start justify-between gap-4 p-5">
-              <div className="min-w-0 space-y-1">
-                <p className="text-sm text-muted-foreground">{label}</p>
-                <p className="text-2xl font-semibold tabular-nums text-muted-foreground">
-                  —
-                </p>
-                <p className="text-xs text-muted-foreground">Not yet wired up</p>
-              </div>
-              <span className="rounded-lg bg-primary/10 p-2 text-primary">
-                <CalendarCheck className="h-5 w-5" />
-              </span>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center gap-3">
+            <CalendarDays className="h-5 w-5" />
+
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Total Bookings
+              </p>
+
+              <p className="text-3xl font-bold">
+                {bookings.length}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Booking list</CardTitle>
+          <CardTitle>Booking List</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-sm font-medium">Coming soon</p>
-          <p className="text-sm text-muted-foreground">
-            The booking inbox, technician assignment and completion flow land
-            next. Reads are already scoped by the Phase 4 restrictive policies,
-            so a technician will only ever see their own bookings.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate('/dashboard')}
-          >
-            Back to dashboard
-          </Button>
+
+        <CardContent>
+          {loading ? (
+            <p>Loading bookings...</p>
+          ) : bookings.length === 0 ? (
+            <p>No bookings found.</p>
+          ) : (
+            <div className="space-y-3">
+              {bookings.map((booking) => (
+                <div
+                  key={booking.id}
+                  className="rounded border p-4"
+                >
+                  <div className="font-medium">
+                    {booking.full_name || 'Unknown Customer'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    Ref: {booking.booking_ref || '-'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    Status: {booking.status || '-'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    Email: {booking.email || '-'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    Phone: {booking.phone || '-'}
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    Unit: {booking.unit_number || '-'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
