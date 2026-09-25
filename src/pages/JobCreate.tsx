@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase/client';
 
 export default function JobCreatePage() {
   const navigate = useNavigate();
-  const [startDate, setStartDate] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -14,6 +13,9 @@ export default function JobCreatePage() {
   const [title, setTitle] = useState('');
   const [reference, setReference] = useState('');
   const [priority, setPriority] = useState(2);
+
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   const [siteName, setSiteName] = useState('');
   const [addressLine1, setAddressLine1] = useState('');
@@ -27,26 +29,43 @@ export default function JobCreatePage() {
     setLoading(true);
     setError(null);
 
+    // jobs.start_date and end_date are NOT NULL with no default, so an insert
+    // without them fails at the database even when the form looks complete.
+    if (!startDate || !endDate) {
+      setError('Start date and end date are required.');
+      setLoading(false);
+      return;
+    }
+
+    if (endDate < startDate) {
+      setError('End date cannot be before the start date.');
+      setLoading(false);
+      return;
+    }
+
     const { error: insertError } = await (supabase as any)
-  .from('jobs')
-  .insert([
-    {
-      company_id: '45584402-8893-4028-93d6-477d7d6f2ce2',
-      partner_id: '761d03bf-e6ba-46cf-8f0e-037fdeb908cd',
+      .from('jobs')
+      .insert([
+        {
+          company_id: '45584402-8893-4028-93d6-477d7d6f2ce2',
+          partner_id: '761d03bf-e6ba-46cf-8f0e-037fdeb908cd',
 
-      job_number: jobNumber,
-      title,
-      reference,
-      priority,
+          job_number: jobNumber,
+          title,
+          reference,
+          priority,
 
-      site_name: siteName,
-      address_line1: addressLine1,
-      address_line2: addressLine2,
-      suburb,
-      state,
-      postcode,
-    },
-  ]);
+          site_name: siteName,
+          address_line1: addressLine1,
+          address_line2: addressLine2,
+          suburb,
+          state,
+          postcode,
+
+          start_date: startDate,
+          end_date: endDate,
+        },
+      ]);
 
     setLoading(false);
 
@@ -75,19 +94,12 @@ export default function JobCreatePage() {
           <h2 className="mb-4 text-lg font-semibold">Job Details</h2>
 
           <div className="grid gap-4 md:grid-cols-2">
-<input
-className="rounded border p-2"
-placeholder="Job Number"
-value={jobNumber}
-onChange={(e) => setJobNumber(e.target.value)}
-/>
- 
-<input
-type="date"
-className="rounded border p-2"
-value={startDate}
-onChange={(e) => setStartDate(e.target.value)}
-/>
+            <input
+              className="rounded border p-2"
+              placeholder="Job Number"
+              value={jobNumber}
+              onChange={(e) => setJobNumber(e.target.value)}
+            />
 
             <input
               className="rounded border p-2"
@@ -113,6 +125,35 @@ onChange={(e) => setStartDate(e.target.value)}
               <option value={3}>High</option>
               <option value={4}>Urgent</option>
             </select>
+          </div>
+        </div>
+
+        <div>
+          <h2 className="mb-4 text-lg font-semibold">Schedule</h2>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Start Date</span>
+              <input
+                type="date"
+                className="rounded border p-2"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                required
+              />
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">End Date</span>
+              <input
+                type="date"
+                className="rounded border p-2"
+                value={endDate}
+                min={startDate || undefined}
+                onChange={(e) => setEndDate(e.target.value)}
+                required
+              />
+            </label>
           </div>
         </div>
 
@@ -167,7 +208,10 @@ onChange={(e) => setStartDate(e.target.value)}
         </div>
 
         {error && (
-          <p role="alert" className="rounded border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+          <p
+            role="alert"
+            className="rounded border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+          >
             {error}
           </p>
         )}
