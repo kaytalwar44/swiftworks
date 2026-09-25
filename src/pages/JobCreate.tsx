@@ -13,6 +13,7 @@ export default function JobCreatePage() {
   const [title, setTitle] = useState('');
   const [reference, setReference] = useState('');
   const [priority, setPriority] = useState(2);
+  const [unitCount, setUnitCount] = useState(16);
 
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -61,6 +62,8 @@ export default function JobCreatePage() {
           suburb,
           state,
           postcode,
+
+          unit_count: unitCount,
 
           start_date: startDate,
           end_date: endDate,
@@ -125,6 +128,30 @@ export default function JobCreatePage() {
               <option value={3}>High</option>
               <option value={4}>Urgent</option>
             </select>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Units Per Day</span>
+              <select
+                className="rounded border p-2"
+                value={unitCount}
+                onChange={(e) => setUnitCount(Number(e.target.value))}
+              >
+                <option value={2}>2</option>
+                <option value={4}>4</option>
+                <option value={6}>6</option>
+                <option value={8}>8</option>
+                <option value={10}>10</option>
+                <option value={12}>12</option>
+                <option value={16}>16</option>
+                <option value={18}>18</option>
+                <option value={20}>20</option>
+                <option value={22}>22</option>
+                <option value={24}>24</option>
+                <option value={26}>26</option>
+                <option value={28}>28</option>
+                <option value={30}>30</option>
+              </select>
+            </label>
           </div>
         </div>
 
