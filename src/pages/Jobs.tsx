@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Building2, CalendarPlus, Loader2, Pencil } from 'lucide-react';
+import { Building2, CalendarPlus, List, Loader2, Pencil } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,22 @@ type JobDraft = {
   state: string;
   postcode: string;
 };
+
+type Slot = {
+  id: string;
+  slot_date: string;
+  local_start: string;
+  local_end: string;
+  capacity: number;
+  booked_count: number;
+  status: string;
+};
+
+/** Postgres time columns come back as HH:MM:SS; the table reads better as HH:MM. */
+function formatTime(value: string | null): string {
+  if (!value) return '-';
+  return value.slice(0, 5);
+}
 
 function toDraft(job: Job): JobDraft {
   return {
@@ -97,6 +113,11 @@ export default function Jobs() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const [viewingJob, setViewingJob] = useState<Job | null>(null);
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsError, setSlotsError] = useState<string | null>(null);
+
   const loadJobs = useCallback(async () => {
     setLoading(true);
 
@@ -134,6 +155,38 @@ export default function Jobs() {
     setDraft(null);
     setSaveError(null);
     setSaving(false);
+  }
+
+  async function openSlots(job: Job) {
+    setViewingJob(job);
+    setSlots([]);
+    setSlotsError(null);
+    setSlotsLoading(true);
+
+    const { data, error } = await (supabase as any)
+      .from('job_slots')
+      .select(
+        'id, slot_date, local_start, local_end, capacity, booked_count, status',
+      )
+      .eq('job_id', job.id)
+      .order('slot_date', { ascending: true })
+      .order('local_start', { ascending: true });
+
+    setSlotsLoading(false);
+
+    if (error) {
+      setSlotsError(error.message);
+      return;
+    }
+
+    setSlots((data ?? []) as Slot[]);
+  }
+
+  function closeSlots() {
+    setViewingJob(null);
+    setSlots([]);
+    setSlotsError(null);
+    setSlotsLoading(false);
   }
 
   async function saveEdit(e: FormEvent<HTMLFormElement>) {
@@ -327,7 +380,7 @@ export default function Jobs() {
                     Units: {job.unit_count ?? '-'}
                   </div>
 
-                  <div className="mt-3 flex gap-2">
+                  <div className="mt-3 flex flex-wrap gap-2">
                     <Button
                       size="sm"
                       variant="outline"
@@ -350,6 +403,15 @@ export default function Jobs() {
                     <Button
                       size="sm"
                       variant="outline"
+                      onClick={() => openSlots(job)}
+                    >
+                      <List className="mr-2 h-4 w-4" />
+                      View Slots
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
                       onClick={() => openEdit(job)}
                     >
                       <Pencil className="mr-2 h-4 w-4" />
@@ -362,6 +424,101 @@ export default function Jobs() {
           )}
         </CardContent>
       </Card>
+
+      {viewingJob && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="view-slots-title"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') closeSlots();
+          }}
+          tabIndex={-1}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeSlots();
+          }}
+        >
+          <div className="w-full max-w-3xl space-y-4 rounded-lg border bg-background p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="view-slots-title" className="text-lg font-semibold">
+                  Slots
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  {viewingJob.title || viewingJob.job_number || 'Untitled'}
+                  {slots.length > 0 ? ` · ${slots.length} slots` : ''}
+                </p>
+              </div>
+
+              <Button size="sm" variant="outline" onClick={closeSlots}>
+                Close
+              </Button>
+            </div>
+
+            {slotsLoading ? (
+              <div className="flex h-32 items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : slotsError ? (
+              <p
+                role="alert"
+                className="rounded border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+              >
+                {slotsError}
+              </p>
+            ) : slots.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No slots yet. Use Generate Slots to create them.
+              </p>
+            ) : (
+              <div className="max-h-[60vh] overflow-y-auto rounded border">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-muted/60 backdrop-blur">
+                    <tr className="text-left">
+                      <th className="px-3 py-2 font-medium">Date</th>
+                      <th className="px-3 py-2 font-medium">Start</th>
+                      <th className="px-3 py-2 font-medium">End</th>
+                      <th className="px-3 py-2 text-right font-medium">
+                        Capacity
+                      </th>
+                      <th className="px-3 py-2 text-right font-medium">
+                        Booked
+                      </th>
+                      <th className="px-3 py-2 font-medium">Status</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {slots.map((slot) => (
+                      <tr key={slot.id} className="border-t">
+                        <td className="px-3 py-2 tabular-nums">
+                          {slot.slot_date}
+                        </td>
+                        <td className="px-3 py-2 tabular-nums">
+                          {formatTime(slot.local_start)}
+                        </td>
+                        <td className="px-3 py-2 tabular-nums">
+                          {formatTime(slot.local_end)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {slot.capacity}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {slot.booked_count}
+                        </td>
+                        <td className="px-3 py-2 capitalize">
+                          {slot.status}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {editingJob && draft && (
         <div
