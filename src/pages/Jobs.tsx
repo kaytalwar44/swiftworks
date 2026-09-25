@@ -202,30 +202,6 @@ export default function Jobs() {
       return;
     }
 
-    // Duplicate guard. job_slots_no_seq_overlap rejects a second batch at
-    // identical timestamps, so re-running the generator would surface a raw
-    // Postgres error instead of a useful message. Check first and stop cleanly.
-    // The filters match the constraint's own WHERE clause, so a job whose
-    // slots were deleted or cancelled still regenerates.
-    const { count, error: countError } = await (supabase as any)
-      .from('job_slots')
-      .select('id', { count: 'exact', head: true })
-      .eq('job_id', job.id)
-      .is('deleted_at', null)
-      .neq('status', 'cancelled');
-
-    if (countError) {
-      setNotice(countError.message);
-      setGeneratingId(null);
-      return;
-    }
-
-    if (count && count > 0) {
-      setNotice('Slots already exist for this job.');
-      setGeneratingId(null);
-      return;
-    }
-
     const [morningCapacity, afternoonCapacity] = splitCapacity(job.unit_count);
     const dates = eachDate(job.start_date, job.end_date);
 
@@ -255,6 +231,19 @@ export default function Jobs() {
     setGeneratingId(null);
 
     if (error) {
+      // The exclusion constraint is the duplicate guard. It fires when a second
+      // batch would collide with existing rows at identical timestamps, so
+      // translate it rather than showing raw Postgres output.
+      if (
+        error.message.includes('job_slots_no_seq_overlap') ||
+        error.message.includes(
+          'conflicting key value violates exclusion constraint',
+        )
+      ) {
+        setNotice('Slots already exist for this job.');
+        return;
+      }
+
       setNotice(error.message);
       return;
     }
