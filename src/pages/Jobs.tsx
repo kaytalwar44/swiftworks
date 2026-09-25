@@ -20,19 +20,26 @@ export default function Jobs() {
 
   useEffect(() => {
     async function loadJobs() {
-      const { data, error } = await supabase
-        .from('jobs')
-        .select(
-          'id, job_number, title, status, priority, site_name, suburb'
-        )
-        .order('job_number');
+  const { data, error } = await supabase
+    .from('jobs')
+    .select(
+      'id, job_number, title, status, priority, site_name, suburb'
+    )
+    .order('job_number');
 
-      if (!error && data) {
-        setJobs(data);
-      }
+  console.log('Jobs Data:', data);
+  console.log('Jobs Error:', error);
 
-      setLoading(false);
-    }
+  if (error) {
+    console.error(error);
+  }
+
+  if (!error && data) {
+    setJobs(data);
+  }
+
+  setLoading(false);
+}
 
     loadJobs();
   }, []);
