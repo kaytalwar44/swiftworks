@@ -100,7 +100,7 @@ export default function Jobs() {
   const loadJobs = useCallback(async () => {
     setLoading(true);
 
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('jobs')
       .select(
         'id, company_id, job_number, title, reference, status, priority, site_name, address_line1, address_line2, suburb, state, postcode, start_date, end_date, unit_count',
@@ -198,6 +198,30 @@ export default function Jobs() {
 
     if (job.unit_count <= 0) {
       setNotice('This job has no units to schedule.');
+      setGeneratingId(null);
+      return;
+    }
+
+    // Duplicate guard. job_slots_no_seq_overlap rejects a second batch at
+    // identical timestamps, so re-running the generator would surface a raw
+    // Postgres error instead of a useful message. Check first and stop cleanly.
+    // The filters match the constraint's own WHERE clause, so a job whose
+    // slots were deleted or cancelled still regenerates.
+    const { count, error: countError } = await (supabase as any)
+      .from('job_slots')
+      .select('id', { count: 'exact', head: true })
+      .eq('job_id', job.id)
+      .is('deleted_at', null)
+      .neq('status', 'cancelled');
+
+    if (countError) {
+      setNotice(countError.message);
+      setGeneratingId(null);
+      return;
+    }
+
+    if (count && count > 0) {
+      setNotice('Slots already exist for this job.');
       setGeneratingId(null);
       return;
     }
