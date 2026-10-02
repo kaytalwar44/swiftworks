@@ -67,16 +67,12 @@ type BookingLink = {
 };
 
 /**
- * Public origin used to build booking URLs. Set VITE_APP_URL in .env.local —
- * without it, QR codes would encode a localhost address no resident's phone
- * could reach.
+ * QR image service. The host is assembled from parts so that copying this
+ * file out of a chat or editor cannot auto-link the domain.
  */
-const BOOKING_BASE_URL =
-  (import.meta.env.VITE_APP_URL as string | undefined) ||
-  '[swiftworks-alpha.vercel.app](https://swiftworks-alpha.vercel.app)';
-
+const QR_HOST = ['api', 'qrserver', 'com'].join('.');
 const QR_API_BASE =
-  '[api.qrserver.com](https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=12&data=)';
+  'https://' + QR_HOST + '/v1/create-qr-code/?size=260x260&margin=12&data=';
 
 /** Postgres time columns come back as HH:MM:SS; the table reads better as HH:MM. */
 function formatTime(value: string | null): string {
@@ -228,7 +224,7 @@ export default function Jobs() {
     setNotice(null);
 
     const token = crypto.randomUUID();
-    const bookingUrl = BOOKING_BASE_URL + '/book/' + token;
+    const bookingUrl = `${window.location.origin}/book/${token}`;
 
     const { data, error } = await (supabase as any)
       .from('booking_links')
