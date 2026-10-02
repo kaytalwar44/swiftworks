@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Building2, CalendarPlus, List, Loader2, Pencil } from 'lucide-react';
+import {
+  Building2,
+  CalendarPlus,
+  ExternalLink,
+  List,
+  Loader2,
+  Pencil,
+  QrCode,
+} from 'lucide-react';
 
 import { supabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -50,6 +58,26 @@ type Slot = {
   status: string;
 };
 
+type BookingLink = {
+  id: string;
+  job_id: string;
+  token: string;
+  booking_url: string;
+  created_at: string;
+};
+
+/**
+ * Public origin used to build booking URLs. Set VITE_APP_URL in .env.local —
+ * without it, QR codes would encode a localhost address no resident's phone
+ * could reach.
+ */
+const BOOKING_BASE_URL =
+  (import.meta.env.VITE_APP_URL as string | undefined) ||
+  '[swiftworks-alpha.vercel.app](https://swiftworks-alpha.vercel.app)';
+
+const QR_API_BASE =
+  '[api.qrserver.com](https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=12&data=)';
+
 /** Postgres time columns come back as HH:MM:SS; the table reads better as HH:MM. */
 function formatTime(value: string | null): string {
   if (!value) return '-';
@@ -93,8 +121,8 @@ function splitCapacity(unitCount: number): [number, number] {
 /** Every date from start to end inclusive, as YYYY-MM-DD. */
 function eachDate(startDate: string, endDate: string): string[] {
   const dates: string[] = [];
-  const start = new Date(`${startDate}T00:00:00Z`);
-  const end = new Date(`${endDate}T00:00:00Z`);
+  const start = new Date(startDate + 'T00:00:00Z');
+  const end = new Date(endDate + 'T00:00:00Z');
 
   for (let d = start; d <= end; d = new Date(d.getTime() + 86_400_000)) {
     dates.push(d.toISOString().slice(0, 10));
@@ -117,6 +145,12 @@ export default function Jobs() {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState<string | null>(null);
+
+  const [bookingLinks, setBookingLinks] = useState<Record<string, BookingLink>>(
+    {},
+  );
+  const [qrFor, setQrFor] = useState<BookingLink | null>(null);
+  const [linkBusyId, setLinkBusyId] = useState<string | null>(null);
 
   const loadJobs = useCallback(async () => {
     setLoading(true);
@@ -187,6 +221,51 @@ export default function Jobs() {
     setSlots([]);
     setSlotsError(null);
     setSlotsLoading(false);
+  }
+
+  async function generateQr(job: Job) {
+    setLinkBusyId(job.id);
+    setNotice(null);
+
+    const token = crypto.randomUUID();
+    const bookingUrl = BOOKING_BASE_URL + '/book/' + token;
+
+    const { data, error } = await (supabase as any)
+      .from('booking_links')
+      .insert([
+        {
+          company_id: job.company_id,
+          job_id: job.id,
+          token,
+          booking_url: bookingUrl,
+          created_at: new Date().toISOString(),
+        },
+      ])
+      .select('id, job_id, token, booking_url, created_at')
+      .single();
+
+    setLinkBusyId(null);
+
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+
+    setBookingLinks((prev) => ({
+      ...prev,
+      [job.id]: data as BookingLink,
+    }));
+
+    setNotice('Booking link created: ' + bookingUrl);
+  }
+
+  async function copyLink(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setNotice('Booking link copied to clipboard.');
+    } catch {
+      setNotice('Could not copy automatically — select the link and copy it.');
+    }
   }
 
   async function saveEdit(e: FormEvent<HTMLFormElement>) {
@@ -260,7 +339,7 @@ export default function Jobs() {
 
     // start_time and end_time are NOT NULL with no default, so they are
     // derived from the slot date and the local window. The +10:00 offset is
-    // Sydney time.
+    // Sydney standard time.
     const payload = dates.flatMap((slot_date) =>
       SLOT_WINDOWS.map((window, index) => ({
         company_id: job.company_id,
@@ -268,8 +347,8 @@ export default function Jobs() {
         slot_date,
         local_start: window.local_start,
         local_end: window.local_end,
-        start_time: `${slot_date}T${window.local_start}+10:00`,
-        end_time: `${slot_date}T${window.local_end}+10:00`,
+        start_time: slot_date + 'T' + window.local_start + '+10:00',
+        end_time: slot_date + 'T' + window.local_end + '+10:00',
         capacity: index === 0 ? morningCapacity : afternoonCapacity,
         booked_count: 0,
         status: 'open',
@@ -284,9 +363,8 @@ export default function Jobs() {
     setGeneratingId(null);
 
     if (error) {
-      // The exclusion constraint is the duplicate guard. It fires when a second
-      // batch would collide with existing rows at identical timestamps, so
-      // translate it rather than showing raw Postgres output.
+      // The exclusion constraint is the duplicate guard. Translate it rather
+      // than showing raw Postgres output.
       if (
         error.message.includes('job_slots_no_seq_overlap') ||
         error.message.includes(
@@ -302,7 +380,15 @@ export default function Jobs() {
     }
 
     setNotice(
-      `Created ${payload.length} slots across ${dates.length} days (${morningCapacity} morning, ${afternoonCapacity} afternoon).`,
+      'Created ' +
+        payload.length +
+        ' slots across ' +
+        dates.length +
+        ' days (' +
+        morningCapacity +
+        ' morning, ' +
+        afternoonCapacity +
+        ' afternoon).',
     );
   }
 
@@ -335,7 +421,7 @@ export default function Jobs() {
 
         <CardContent>
           {notice && (
-            <p className="mb-4 rounded border bg-muted/40 p-3 text-sm">
+            <p className="mb-4 break-all rounded border bg-muted/40 p-3 text-sm">
               {notice}
             </p>
           )}
@@ -412,12 +498,61 @@ export default function Jobs() {
                     <Button
                       size="sm"
                       variant="outline"
+                      disabled={linkBusyId === job.id}
+                      onClick={() => generateQr(job)}
+                    >
+                      {linkBusyId === job.id ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Creating...
+                        </>
+                      ) : (
+                        <>
+                          <QrCode className="mr-2 h-4 w-4" />
+                          Generate QR
+                        </>
+                      )}
+                    </Button>
+
+                    {bookingLinks[job.id] && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setQrFor(bookingLinks[job.id])}
+                        >
+                          <QrCode className="mr-2 h-4 w-4" />
+                          View QR
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            copyLink(bookingLinks[job.id].booking_url)
+                          }
+                        >
+                          <ExternalLink className="mr-2 h-4 w-4" />
+                          Copy link
+                        </Button>
+                      </>
+                    )}
+
+                    <Button
+                      size="sm"
+                      variant="outline"
                       onClick={() => openEdit(job)}
                     >
                       <Pencil className="mr-2 h-4 w-4" />
                       Edit
                     </Button>
                   </div>
+
+                  {bookingLinks[job.id] && (
+                    <p className="mt-2 break-all text-xs text-muted-foreground">
+                      {bookingLinks[job.id].booking_url}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -447,7 +582,7 @@ export default function Jobs() {
                 </h2>
                 <p className="text-sm text-muted-foreground">
                   {viewingJob.title || viewingJob.job_number || 'Untitled'}
-                  {slots.length > 0 ? ` · ${slots.length} slots` : ''}
+                  {slots.length > 0 ? ' · ' + slots.length + ' slots' : ''}
                 </p>
               </div>
 
@@ -516,6 +651,55 @@ export default function Jobs() {
                 </table>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {qrFor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="qr-title"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setQrFor(null);
+          }}
+          tabIndex={-1}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setQrFor(null);
+          }}
+        >
+          <div className="w-full max-w-sm space-y-4 rounded-lg border bg-background p-6 text-center shadow-xl">
+            <div>
+              <h2 id="qr-title" className="text-lg font-semibold">
+                Booking QR
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Residents scan this to book a slot
+              </p>
+            </div>
+
+            <img
+              src={QR_API_BASE + encodeURIComponent(qrFor.booking_url)}
+              alt={'QR code for ' + qrFor.booking_url}
+              width={260}
+              height={260}
+              className="mx-auto rounded border bg-white p-2"
+            />
+
+            <p className="break-all rounded border bg-muted/40 p-3 text-left text-xs">
+              {qrFor.booking_url}
+            </p>
+
+            <div className="flex justify-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => copyLink(qrFor.booking_url)}
+              >
+                Copy link
+              </Button>
+              <Button onClick={() => setQrFor(null)}>Close</Button>
+            </div>
           </div>
         </div>
       )}
