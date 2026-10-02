@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router';
 import JobCreatePage from './pages/JobCreate';
+import BookingPage from './pages/BookingPage';
 
 import { AppShell } from '@/layouts/app-shell';
 import { PageSkeleton } from '@/components/shared/page-skeleton';
@@ -29,6 +30,7 @@ export default function App() {
         <Routes>
           {/* ---------- Public ---------- */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/book/:token" element={<BookingPage />} />
 
           {/* ---------- Authenticated operator console ---------- */}
           <Route
