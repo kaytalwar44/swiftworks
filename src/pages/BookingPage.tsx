@@ -112,51 +112,67 @@ export default function BookingPage() {
     }
 
     // 1. Find the booking link by token.
-    const linkRes = await (supabase as any)
-      .from('booking_links')
-      .select('id, job_id, token')
-      .eq('token', token)
-      .maybeSingle();
+    //
+    // This runs through a SECURITY DEFINER function rather than a direct
+    // select. Customers are signed out, so row-level security would hide the
+    // row and the page would report "invalid or has expired" for a token that
+    // exists. The function matches the token alone and returns only the one
+    // job the link points at.
+    const linkRes = await (supabase as any).rpc('booking_link_job', {
+      p_token: token,
+    });
 
-    if (linkRes.error || !linkRes.data) {
+    if (linkRes.error) {
+      console.error('booking_link_job failed', linkRes.error);
       setLoadError('This booking link is invalid or has expired.');
       setLoading(false);
       return;
     }
 
-    const foundLink = linkRes.data as BookingLink;
+    const linkRow = Array.isArray(linkRes.data) ? linkRes.data[0] : linkRes.data;
+
+    if (!linkRow || !linkRow.job_id) {
+      setLoadError('This booking link is invalid or has expired.');
+      setLoading(false);
+      return;
+    }
+
+    const foundLink = {
+      id: String(linkRow.link_id ?? ''),
+      job_id: String(linkRow.job_id),
+      token,
+    } as BookingLink;
+
     setLink(foundLink);
 
-    // 2. Load the related job.
-    const jobRes = await (supabase as any)
-      .from('jobs')
-      .select(
-        'id, title, job_number, site_name, address_line1, suburb, state, postcode',
-      )
-      .eq('id', foundLink.job_id)
-      .maybeSingle();
-
-    if (jobRes.error || !jobRes.data) {
+    // 2. The job details arrive with the link, so nothing further is needed.
+    if (!linkRow.job_title && !linkRow.job_number) {
       setLoadError('The job for this booking link could not be found.');
       setLoading(false);
       return;
     }
 
-    setJob(jobRes.data as Job);
+    setJob({
+      id: foundLink.job_id,
+      title: linkRow.job_title ?? null,
+      job_number: linkRow.job_number ?? null,
+      site_name: linkRow.site_name ?? null,
+      address_line1: linkRow.address_line1 ?? null,
+      suburb: linkRow.suburb ?? null,
+      state: linkRow.state ?? null,
+      postcode: linkRow.postcode ?? null,
+    } as Job);
 
-    // 3. Load open, future slots for the job.
-    const slotRes = await (supabase as any)
-      .from('job_slots')
-      .select(
-        'id, slot_date, local_start, local_end, capacity, booked_count, status',
-      )
-      .eq('job_id', foundLink.job_id)
-      .eq('status', 'open')
-      .gte('slot_date', todayIso())
-      .order('slot_date', { ascending: true })
-      .order('local_start', { ascending: true });
+    // 3. Load open, future slots for the job. Same reason as the link lookup:
+    // the caller is signed out, so this is a definer function scoped to the
+    // token rather than a direct select.
+    const slotRes = await (supabase as any).rpc('booking_slots', {
+      p_token: token,
+      p_from: todayIso(),
+    });
 
     if (slotRes.error) {
+      console.error('booking_slots failed', slotRes.error);
       setLoadError(slotRes.error.message);
       setLoading(false);
       return;
@@ -221,7 +237,10 @@ export default function BookingPage() {
 
     if (error) {
       const msg = String(error.message || '');
-      if (msg.toLowerCase().includes('full') || msg.toLowerCase().includes('capacity')) {
+      if (
+        msg.toLowerCase().includes('full') ||
+        msg.toLowerCase().includes('capacity')
+      ) {
         setSubmitError('Sorry, that slot has just filled. Please choose another.');
         setSelectedSlotId(null);
         void loadBooking();
@@ -339,7 +358,9 @@ export default function BookingPage() {
                           }
                           onClick={() => setSelectedSlotId(slot.id)}
                         >
-                          <td className="px-3 py-2">{formatDate(slot.slot_date)}</td>
+                          <td className="px-3 py-2">
+                            {formatDate(slot.slot_date)}
+                          </td>
                           <td className="px-3 py-2">
                             {periodLabel(slot.local_start)}
                             <span className="ml-1 text-xs text-muted-foreground tabular-nums">
@@ -387,7 +408,9 @@ export default function BookingPage() {
                     placeholder="Full Name"
                     autoComplete="name"
                     value={form.full_name}
-                    onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, full_name: e.target.value })
+                    }
                     required
                   />
                   <input
