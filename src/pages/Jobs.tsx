@@ -74,6 +74,8 @@ const QR_HOST = ['api', 'qrserver', 'com'].join('.');
 const QR_API_BASE =
   'https://' + QR_HOST + '/v1/create-qr-code/?size=260x260&margin=12&data=';
 
+const APP_URL = 'https://swiftworks-seven.vercel.app';
+
 /** Postgres time columns come back as HH:MM:SS; the table reads better as HH:MM. */
 function formatTime(value: string | null): string {
   if (!value) return '-';
@@ -224,7 +226,7 @@ export default function Jobs() {
     setNotice(null);
 
     const token = crypto.randomUUID();
-    const bookingUrl = `${window.location.origin}/book/${token}`;
+    const bookingUrl = `${APP_URL}/book/${token}`;
 
     const { data, error } = await (supabase as any)
       .from('booking_links')
