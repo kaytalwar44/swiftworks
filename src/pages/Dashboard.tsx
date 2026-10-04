@@ -1,14 +1,18 @@
-import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import {
   Building2,
   CalendarCheck,
   CalendarDays,
+  Clock,
   DollarSign,
+  HardHat,
+  Info,
   Loader2,
+  MapPin,
   Plus,
   QrCode,
+  Star,
   TrendingUp,
   Users,
 } from 'lucide-react';
@@ -53,119 +57,222 @@ function KpiCard({ label, value, hint, icon: Icon, accent }: KpiCardProps) {
   );
 }
 
-/** True when the payload is a non-null, non-array object. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+/** Shape returned by technician_dashboard(), confirmed against the live RPC. */
+type TechnicianDashboard = {
+  date: string;
+  today: {
+    total: number;
+    completed: number;
+    remaining: number;
+  };
+  week: {
+    total: number;
+    completed: number;
+  };
+  earnings: {
+    rating: number | null;
+    current_period: number;
+    lifetime_installs: number;
+  };
+  next_booking: {
+    booking_ref: string | null;
+    site_name: string | null;
+    address: string | null;
+    unit_number: string | null;
+    local_start: string | null;
+    local_end: string | null;
+    access_notes: string | null;
+    special_comments: string | null;
+  } | null;
+};
+
+/** "08:00:00" -> "08:00" */
+function formatTime(value: string | null): string {
+  return value ? value.slice(0, 5) : '-';
+}
+
+/** "2026-10-04" -> "Sun 04 Oct 2026" */
+function formatDate(value: string | null): string {
+  if (!value) return '-';
+  const d = new Date(value + 'T00:00:00');
+  return d.toLocaleDateString('en-AU', {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 /**
- * TEMPORARY DEBUG VIEW
- *
- * Calls technician_dashboard() and dumps the raw response so the real field
- * names can be read off the screen instead of guessed. Delete this component
- * and the branch in Dashboard() once the payload shape is confirmed.
+ * Technician dashboard. Resolves the calling technician server-side through
+ * app.current_technician_id(), so no id is passed and no tenant data beyond
+ * their own assignments is reachable.
  */
-function TechnicianDebug() {
-  const [payload, setPayload] = useState<unknown>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+function TechnicianDashboardView() {
+  const { data, isPending } = useQuery({
+    queryKey: ['dashboard', 'technician'],
+    queryFn: async () => {
+      const response = await (supabase as any).rpc('technician_dashboard', {
+  p_date: new Date().toISOString().slice(0, 10),
+});
+      const rows = unwrap(response) as unknown as TechnicianDashboard[];
+      return Array.isArray(rows) ? rows[0] : (rows as TechnicianDashboard);
+    },
+    refetchInterval: 60_000,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
+  if (isPending) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
-    (async () => {
-      const { data, error: rpcError } = await (supabase as any).rpc(
-  'technician_dashboard',
-  { p_date: new Date().toISOString().slice(0, 10) }
-);
+  if (!data) {
+    return (
+      <Card>
+        <CardContent className="p-6 text-sm text-muted-foreground">
+          No dashboard data available. Your account may not be linked to a
+          technician record.
+        </CardContent>
+      </Card>
+    );
+  }
 
-      if (cancelled) return;
-
-      console.log('technician_dashboard raw:', JSON.stringify(data, null, 2));
-      console.log('technician_dashboard error:', rpcError);
-
-      if (rpcError) {
-        setError(rpcError.message);
-      } else {
-        setPayload(data);
-      }
-
-      setLoading(false);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const row = Array.isArray(payload) ? payload[0] : payload;
+  const booking = data.next_booking;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Technician debug
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Temporary: raw technician_dashboard() response
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">My day</h1>
+        <p className="text-sm text-muted-foreground">{formatDate(data.date)}</p>
       </div>
 
-      {loading && (
-        <div className="flex h-32 items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      )}
+      {/* KPI cards */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          label="Today's jobs"
+          value={data.today.total}
+          hint={`${data.today.completed} completed`}
+          icon={CalendarCheck}
+        />
+        <KpiCard
+          label="Remaining today"
+          value={data.today.remaining}
+          hint={data.today.remaining === 0 ? 'All done' : 'Still to visit'}
+          icon={Clock}
+          accent="bg-amber-500/10 text-amber-600"
+        />
+        <KpiCard
+          label="Jobs this week"
+          value={data.week.total}
+          hint={`${data.week.completed} completed`}
+          icon={CalendarDays}
+        />
+        <KpiCard
+          label="Lifetime installs"
+          value={data.earnings.lifetime_installs}
+          hint={`${formatMoney(data.earnings.current_period)} this period`}
+          icon={HardHat}
+        />
+      </div>
 
-      {!loading && error && (
-        <Card>
-          <CardContent className="p-4 text-sm text-destructive">
-            {error}
-          </CardContent>
-        </Card>
-      )}
+      {/* Rating */}
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4 p-5">
+          <div className="space-y-1">
+            <p className="text-sm text-muted-foreground">Rating</p>
+            <p className="text-2xl font-semibold tabular-nums">
+              {data.earnings.rating != null
+                ? data.earnings.rating.toFixed(1)
+                : '—'}
+            </p>
+          </div>
+          <span className="rounded-lg bg-primary/10 p-2 text-primary">
+            <Star className="h-5 w-5" />
+          </span>
+        </CardContent>
+      </Card>
 
-      {!loading && !error && (
-        <>
-          <Card>
-            <CardContent className="p-4">
-              <pre className="overflow-x-auto whitespace-pre-wrap text-xs">
-                {JSON.stringify(payload, null, 2)}
-              </pre>
-            </CardContent>
-          </Card>
+      {/* Next booking */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Next booking</CardTitle>
+        </CardHeader>
 
-          {/* Top-level keys listed separately: reading names off a list beats
-              scanning nested JSON when the payload is large. */}
-          {isRecord(row) && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Top-level fields ({Object.keys(row).length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-1 text-xs">
-                  {Object.keys(row).map((key) => {
-                    const value = row[key];
-                    const type = Array.isArray(value)
-                      ? 'array'
-                      : value === null
-                        ? 'null'
-                        : typeof value;
-                    return (
-                      <li key={key} className="flex justify-between gap-4">
-                        <code className="font-mono">{key}</code>
-                        <span className="text-muted-foreground">{type}</span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </CardContent>
-            </Card>
+        <CardContent>
+          {!booking ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No upcoming bookings.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <p className="text-base font-medium">
+                  {booking.site_name || 'Scheduled visit'}
+                </p>
+                {booking.booking_ref && (
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Ref {booking.booking_ref}
+                  </p>
+                )}
+              </div>
+
+              {booking.address && (
+                <div className="flex items-start gap-2 text-sm">
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span>{booking.address}</span>
+                </div>
+              )}
+
+              <dl className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Unit
+                  </dt>
+                  <dd className="mt-1 font-medium">
+                    {booking.unit_number || '-'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Time
+                  </dt>
+                  <dd className="mt-1 font-medium tabular-nums">
+                    {formatTime(booking.local_start)} -{' '}
+                    {formatTime(booking.local_end)}
+                  </dd>
+                </div>
+              </dl>
+
+              {booking.access_notes && (
+                <div className="flex items-start gap-2 rounded border bg-muted/40 p-3 text-sm">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Access notes
+                    </p>
+                    <p className="mt-0.5">{booking.access_notes}</p>
+                  </div>
+                </div>
+              )}
+
+              {booking.special_comments && (
+                <div className="flex items-start gap-2 rounded border bg-muted/40 p-3 text-sm">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Special comments
+                    </p>
+                    <p className="mt-0.5">{booking.special_comments}</p>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
-        </>
-      )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -174,13 +281,12 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { company, hasPermission, hasRole } = useAuth();
 
-  // ---- TEMPORARY: technician branch ----------------------------------------
-  // Placed before the summary query so a technician never fires
-  // dashboard_summary(), which aggregates at company level and reads as zeros.
+  // Technicians have their own view. Placed before the summary query so a
+  // technician never fires dashboard_summary(), which aggregates at company
+  // level and would read as zeros against their own assignments.
   if (hasRole('technician')) {
-    return <TechnicianDebug />;
+    return <TechnicianDashboardView />;
   }
-  // ---- END TEMPORARY -------------------------------------------------------
 
   const { data, isPending } = useQuery({
     queryKey: ['dashboard', 'summary'],
@@ -212,10 +318,6 @@ export default function Dashboard() {
   }
 
   const summary = data;
-
-  if (!summary) {
-    return null;
-  }
 
   return (
     <div className="space-y-6">
