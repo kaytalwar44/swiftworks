@@ -10,6 +10,7 @@ import { AuthProvider } from '@/features/auth/providers/auth-provider';
 import { NotFoundPage } from '@/pages/not-found';
 
 const LoginPage = lazy(() => import('@/pages/Login'));
+const AcceptInvitationPage = lazy(() => import('@/pages/AcceptInvitation'));
 const DashboardPage = lazy(() => import('@/pages/Dashboard'));
 
 const JobsPage = lazy(() => import('@/pages/Jobs'));
@@ -30,6 +31,7 @@ export default function App() {
         <Routes>
           {/* ---------- Public ---------- */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/invite/:token" element={<AcceptInvitationPage />} />
           <Route path="/book/:token" element={<BookingPage />} />
 
           {/* ---------- Authenticated operator console ---------- */}
