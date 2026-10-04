@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import {
@@ -52,9 +53,134 @@ function KpiCard({ label, value, hint, icon: Icon, accent }: KpiCardProps) {
   );
 }
 
+/** True when the payload is a non-null, non-array object. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * TEMPORARY DEBUG VIEW
+ *
+ * Calls technician_dashboard() and dumps the raw response so the real field
+ * names can be read off the screen instead of guessed. Delete this component
+ * and the branch in Dashboard() once the payload shape is confirmed.
+ */
+function TechnicianDebug() {
+  const [payload, setPayload] = useState<unknown>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const { data, error: rpcError } = await (supabase as any).rpc(
+  'technician_dashboard',
+  { p_date: new Date().toISOString().slice(0, 10) }
+);
+
+      if (cancelled) return;
+
+      console.log('technician_dashboard raw:', JSON.stringify(data, null, 2));
+      console.log('technician_dashboard error:', rpcError);
+
+      if (rpcError) {
+        setError(rpcError.message);
+      } else {
+        setPayload(data);
+      }
+
+      setLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const row = Array.isArray(payload) ? payload[0] : payload;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Technician debug
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Temporary: raw technician_dashboard() response
+        </p>
+      </div>
+
+      {loading && (
+        <div className="flex h-32 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      )}
+
+      {!loading && error && (
+        <Card>
+          <CardContent className="p-4 text-sm text-destructive">
+            {error}
+          </CardContent>
+        </Card>
+      )}
+
+      {!loading && !error && (
+        <>
+          <Card>
+            <CardContent className="p-4">
+              <pre className="overflow-x-auto whitespace-pre-wrap text-xs">
+                {JSON.stringify(payload, null, 2)}
+              </pre>
+            </CardContent>
+          </Card>
+
+          {/* Top-level keys listed separately: reading names off a list beats
+              scanning nested JSON when the payload is large. */}
+          {isRecord(row) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Top-level fields ({Object.keys(row).length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-1 text-xs">
+                  {Object.keys(row).map((key) => {
+                    const value = row[key];
+                    const type = Array.isArray(value)
+                      ? 'array'
+                      : value === null
+                        ? 'null'
+                        : typeof value;
+                    return (
+                      <li key={key} className="flex justify-between gap-4">
+                        <code className="font-mono">{key}</code>
+                        <span className="text-muted-foreground">{type}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { company, hasPermission } = useAuth();
+  const { company, hasPermission, hasRole } = useAuth();
+
+  // ---- TEMPORARY: technician branch ----------------------------------------
+  // Placed before the summary query so a technician never fires
+  // dashboard_summary(), which aggregates at company level and reads as zeros.
+  if (hasRole('technician')) {
+    return <TechnicianDebug />;
+  }
+  // ---- END TEMPORARY -------------------------------------------------------
 
   const { data, isPending } = useQuery({
     queryKey: ['dashboard', 'summary'],
@@ -75,7 +201,7 @@ export default function Dashboard() {
     );
   }
 
-    if (!data) {
+  if (!data) {
     return (
       <Card>
         <CardContent className="p-6 text-sm text-muted-foreground">
@@ -87,12 +213,11 @@ export default function Dashboard() {
 
   const summary = data;
 
-if (!summary) {
-  return null;
-}
+  if (!summary) {
+    return null;
+  }
 
-return (
-
+  return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
