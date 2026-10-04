@@ -1,0 +1,35 @@
+
+> swiftworks@0.1.0 build
+> tsc -b && vite build
+
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 1793 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                             1.90 kB │ gzip:   0.84 kB
+dist/assets/index-C5qnalLV.css             24.78 kB │ gzip:   5.67 kB
+dist/assets/forms-VrTwedpV.js               0.04 kB │ gzip:   0.06 kB
+dist/assets/plus-CGQ8y6dY.js                0.15 kB │ gzip:   0.15 kB
+dist/assets/pencil-CpTBVynO.js              0.28 kB │ gzip:   0.23 kB
+dist/assets/charts-D6Be7g0p.js              0.47 kB │ gzip:   0.30 kB
+dist/assets/label-DCdp1lGC.js               1.18 kB │ gzip:   0.65 kB
+dist/assets/Customers-2ppZ1RxL.js           1.71 kB │ gzip:   0.70 kB
+dist/assets/Settings-C3rmuC26.js            1.77 kB │ gzip:   0.79 kB
+dist/assets/Schedule-YT1SAInx.js            1.85 kB │ gzip:   0.83 kB
+dist/assets/Team-BFQCtS9k.js                1.92 kB │ gzip:   0.84 kB
+dist/assets/RateCards-BcpUx7Qf.js           1.98 kB │ gzip:   0.77 kB
+dist/assets/Partners-B_NBIRcz.js            2.01 kB │ gzip:   0.76 kB
+dist/assets/Invoices-BiNj_jK3.js            2.02 kB │ gzip:   0.76 kB
+dist/assets/Login-BtVlhhBf.js               2.20 kB │ gzip:   0.99 kB
+dist/assets/Bookings-D7gIciij.js            2.98 kB │ gzip:   1.04 kB
+dist/assets/TechnicianPortal-C9ZkEI4Q.js    4.95 kB │ gzip:   1.82 kB
+dist/assets/AcceptInvitation-I3p_c2ZS.js    6.35 kB │ gzip:   2.14 kB
+dist/assets/Dashboard-DAqvSWDP.js           7.21 kB │ gzip:   2.47 kB
+dist/assets/Technicians-Bd-GTYF-.js        11.63 kB │ gzip:   3.76 kB
+dist/assets/Jobs-YftCzF9o.js               20.21 kB │ gzip:   5.56 kB
+dist/assets/query-DZBGW1Fv.js              33.54 kB │ gzip:  10.12 kB
+dist/assets/react-vendor-CJlbdTZO.js       50.74 kB │ gzip:  17.92 kB
+dist/assets/supabase-Pf0Abwmk.js          224.17 kB │ gzip:  58.66 kB
+dist/assets/index-CuzE20OB.js             402.87 kB │ gzip: 127.07 kB
+✓ built in 8.21s
