@@ -7,6 +7,7 @@ import {
   Loader2,
   Pencil,
   QrCode,
+  Trash2,
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase/client';
@@ -151,6 +152,8 @@ export default function Jobs() {
   /** job_id -> true when the job has at least one non-cancelled booking. */
   const [lockedJobs, setLockedJobs] = useState<Record<string, boolean>>({});
 
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   const loadJobs = useCallback(async () => {
     setLoading(true);
 
@@ -242,6 +245,71 @@ export default function Jobs() {
     setSlots([]);
     setSlotsError(null);
     setSlotsLoading(false);
+  }
+
+  async function deleteJob(job: Job) {
+    setDeletingId(job.id);
+    setNotice(null);
+
+    // A booking row blocks the delete, whatever its status. Checked against the
+    // database rather than the lock map so a booking made since the page
+    // loaded is still caught.
+    const bookingRes = await (supabase as any)
+      .from('customer_bookings')
+      .select('id')
+      .eq('job_id', job.id)
+      .limit(1);
+
+    if (bookingRes.error) {
+      setDeletingId(null);
+      setNotice(bookingRes.error.message);
+      return;
+    }
+
+    if ((bookingRes.data ?? []).length > 0) {
+      setDeletingId(null);
+      setNotice('This job has customer bookings and cannot be deleted.');
+      return;
+    }
+
+    // Children first: booking_links and job_slots both reference jobs, so a
+    // delete of the parent row while they exist is rejected.
+    const linksRes = await (supabase as any)
+      .from('booking_links')
+      .delete()
+      .eq('job_id', job.id);
+
+    if (linksRes.error) {
+      setDeletingId(null);
+      setNotice(linksRes.error.message);
+      return;
+    }
+
+    const slotsRes = await (supabase as any)
+      .from('job_slots')
+      .delete()
+      .eq('job_id', job.id);
+
+    if (slotsRes.error) {
+      setDeletingId(null);
+      setNotice(slotsRes.error.message);
+      return;
+    }
+
+    const jobRes = await (supabase as any)
+      .from('jobs')
+      .delete()
+      .eq('id', job.id);
+
+    setDeletingId(null);
+
+    if (jobRes.error) {
+      setNotice(jobRes.error.message);
+      return;
+    }
+
+    setNotice('Job deleted.');
+    await loadJobs();
   }
 
   async function generateQr(job: Job) {
@@ -584,6 +652,26 @@ export default function Jobs() {
                     >
                       <Pencil className="mr-2 h-4 w-4" />
                       Edit
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-destructive hover:text-destructive"
+                      disabled={deletingId === job.id || !!lockedJobs[job.id]}
+                      onClick={() => deleteJob(job)}
+                    >
+                      {deletingId === job.id ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Deleting...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </>
+                      )}
                     </Button>
                   </div>
 
