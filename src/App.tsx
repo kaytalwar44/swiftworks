@@ -11,6 +11,7 @@ import { NotFoundPage } from '@/pages/not-found';
 
 const LoginPage = lazy(() => import('@/pages/Login'));
 const AcceptInvitationPage = lazy(() => import('@/pages/AcceptInvitation'));
+const TechnicianPortalPage = lazy(() => import('@/pages/TechnicianPortal'));
 const DashboardPage = lazy(() => import('@/pages/Dashboard'));
 
 const JobsPage = lazy(() => import('@/pages/Jobs'));
@@ -33,6 +34,18 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/invite/:token" element={<AcceptInvitationPage />} />
           <Route path="/book/:token" element={<BookingPage />} />
+
+          {/* ---------- Technician portal ---------- */}
+          {/* Authenticated, but outside AppShell: a technician must never
+              render the operator chrome. */}
+          <Route
+            path="/tech"
+            element={
+              <ProtectedRoute>
+                <TechnicianPortalPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* ---------- Authenticated operator console ---------- */}
           <Route
