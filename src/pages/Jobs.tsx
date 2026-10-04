@@ -8,6 +8,7 @@ import {
   Pencil,
   QrCode,
   Trash2,
+  UserPlus,
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase/client';
@@ -154,6 +155,20 @@ export default function Jobs() {
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  /** job_id -> assigned technician's display name. */
+  const [assignedTechs, setAssignedTechs] = useState<Record<string, string>>({});
+
+  /** Technicians selectable in the assign dialog. */
+  const [assignableTechs, setAssignableTechs] = useState<
+    { id: string; full_name: string | null; code: string | null }[]
+  >([]);
+
+  const [assignFor, setAssignFor] = useState<Job | null>(null);
+  const [assignTechnicianId, setAssignTechnicianId] = useState('');
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
+
   const loadJobs = useCallback(async () => {
     setLoading(true);
 
@@ -179,6 +194,22 @@ export default function Jobs() {
       if (row.job_id) locks[row.job_id] = true;
     }
     setLockedJobs(locks);
+
+    // One technician per job: the map keeps the lead (or first) name per job.
+    const assignRes = await (supabase as any)
+      .from('job_technicians')
+      .select('job_id, technician_id, is_lead, technicians ( full_name, code )');
+
+    const assigned: Record<string, string> = {};
+    for (const row of (assignRes.data ?? []) as any[]) {
+      if (!row.job_id) continue;
+      const name =
+        row.technicians?.full_name || row.technicians?.code || null;
+      if (!name) continue;
+      if (row.is_lead === false && assigned[row.job_id]) continue;
+      assigned[row.job_id] = name;
+    }
+    setAssignedTechs(assigned);
 
     if (error) {
       console.error(error);
@@ -355,6 +386,85 @@ export default function Jobs() {
     } catch {
       setNotice('Could not copy automatically — select the link and copy it.');
     }
+  }
+
+  async function openAssign(job: Job) {
+    setAssignFor(job);
+    setAssignError(null);
+    setAssignTechnicianId('');
+    setAssignLoading(true);
+
+    // Available technicians only, and not soft-deleted.
+    const techRes = await (supabase as any)
+      .from('technicians')
+      .select('id, full_name, code')
+      .eq('is_available', true)
+      .is('deleted_at', null)
+      .order('full_name');
+
+    if (techRes.error) {
+      setAssignLoading(false);
+      setAssignError(techRes.error.message);
+      return;
+    }
+
+    setAssignableTechs(techRes.data ?? []);
+
+    // Existing assignment, so the dialog opens on the current technician.
+    const existingRes = await (supabase as any)
+      .from('job_technicians')
+      .select('technician_id')
+      .eq('job_id', job.id)
+      .limit(1);
+
+    const existing = (existingRes.data ?? [])[0] as
+      | { technician_id: string | null }
+      | undefined;
+
+    if (existing?.technician_id) {
+      setAssignTechnicianId(existing.technician_id);
+    }
+
+    setAssignLoading(false);
+  }
+
+  function closeAssign() {
+    setAssignFor(null);
+    setAssignTechnicianId('');
+    setAssignError(null);
+    setAssignSaving(false);
+  }
+
+  async function saveAssignment() {
+    if (!assignFor) return;
+
+    setAssignError(null);
+
+    if (!assignTechnicianId) {
+      setAssignError('Please choose a technician.');
+      return;
+    }
+
+    setAssignSaving(true);
+
+    const { error: rpcError } = await (supabase as any).rpc(
+      'job_assign_technician',
+      {
+        p_job_id: assignFor.id,
+        p_technician_id: assignTechnicianId,
+      },
+    );
+
+    setAssignSaving(false);
+
+    if (rpcError) {
+      setAssignError(rpcError.message);
+      return;
+    }
+
+    closeAssign();
+    setNotice('Technician assigned.');
+    await loadJobs();
   }
 
   async function saveEdit(e: FormEvent<HTMLFormElement>) {
@@ -570,6 +680,10 @@ export default function Jobs() {
                     Units: {job.unit_count ?? '-'}
                   </div>
 
+                  <div className="text-sm text-muted-foreground">
+                    Technician: {assignedTechs[job.id] || 'Unassigned'}
+                  </div>
+
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button
                       size="sm"
@@ -643,6 +757,15 @@ export default function Jobs() {
                         </Button>
                       </>
                     )}
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openAssign(job)}
+                    >
+                      <UserPlus className="mr-2 h-4 w-4" />
+                      {assignedTechs[job.id] ? 'Reassign' : 'Assign Technician'}
+                    </Button>
 
                     <Button
                       size="sm"
@@ -833,6 +956,81 @@ export default function Jobs() {
                 Copy link
               </Button>
               <Button onClick={() => setQrFor(null)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {assignFor && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="assign-title"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') closeAssign();
+          }}
+          tabIndex={-1}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeAssign();
+          }}
+        >
+          <div className="w-full max-w-md space-y-5 rounded-lg border bg-background p-6 shadow-xl">
+            <div>
+              <h2 id="assign-title" className="text-lg font-semibold">
+                {assignedTechs[assignFor.id]
+                  ? 'Reassign Technician'
+                  : 'Assign Technician'}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {assignFor.title || assignFor.job_number || 'Untitled'}
+              </p>
+            </div>
+
+            {assignLoading ? (
+              <div className="flex h-24 items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : assignableTechs.length === 0 ? (
+              <p className="rounded border bg-muted/40 p-3 text-sm">
+                No available technicians. Mark one as available on the
+                Technicians page first.
+              </p>
+            ) : (
+              <select
+                className="w-full rounded border p-2"
+                value={assignTechnicianId}
+                onChange={(e) => setAssignTechnicianId(e.target.value)}
+              >
+                <option value="">Choose a technician</option>
+                {assignableTechs.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.full_name || 'Unnamed'}
+                    {t.code ? ' (' + t.code + ')' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {assignError && (
+              <p
+                role="alert"
+                className="rounded border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+              >
+                {assignError}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={closeAssign}>
+                Cancel
+              </Button>
+              <Button
+                disabled={assignSaving || assignLoading || !assignTechnicianId}
+                onClick={saveAssignment}
+              >
+                {assignSaving ? 'Saving...' : 'Save assignment'}
+              </Button>
             </div>
           </div>
         </div>
