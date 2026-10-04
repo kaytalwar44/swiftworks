@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { HardHat, Loader2, Pencil, Plus, UserCheck, UserX } from 'lucide-react';
+import {
+  HardHat,
+  Loader2,
+  Mail,
+  Pencil,
+  Plus,
+  UserCheck,
+  UserX,
+} from 'lucide-react';
 
 import { supabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -262,6 +270,66 @@ export default function Technicians() {
     await load();
   }
 
+  /**
+   * Issues a technician invitation through the existing invite_user() RPC.
+   *
+   * The technician role id is the confirmed id for this tenant. p_partner_id and
+   * p_member_type are sent explicitly to match the current invitation contract.
+   *
+   * Reuses busyId to prevent a double submit and notice to report the outcome.
+   */
+  async function sendInvite(t: Technician) {
+    setBusyId(t.id);
+    setNotice(null);
+
+    if (!t.email) {
+      setBusyId(null);
+      setNotice('This technician has no email address.');
+      return;
+    }
+
+    const { data, error: rpcError } = await (supabase as any).rpc('invite_user', {
+      p_email: t.email.trim().toLowerCase(),
+      p_role_id: '5f2749c9-b1ce-4a07-8fd4-a0b935c8ba21',
+      p_partner_id: null,
+      p_member_type: 'staff',
+      p_expires_days: 14,
+    });
+
+    setBusyId(null);
+
+    if (rpcError) {
+      // invite_user raises named errors; translate the ones a user can act on.
+      const msg = String(rpcError.message || '');
+      if (msg.includes('user_already_exists')) {
+        setNotice('That email already belongs to a user in this company.');
+        return;
+      }
+      if (msg.includes('insufficient_privilege')) {
+        setNotice('You do not have permission to invite users.');
+        return;
+      }
+      if (msg.includes('invalid_email')) {
+        setNotice('That email address is not valid.');
+        return;
+      }
+      if (msg.includes('no_tenant_context')) {
+        setNotice('No company context found for your account.');
+        return;
+      }
+      setNotice(msg || 'The invitation could not be sent.');
+      return;
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+    setNotice(
+      row?.is_resend
+        ? 'Invitation resent to ' + t.email + '.'
+        : 'Invitation sent to ' + t.email + '.',
+    );
+    await load();
+  }
+
   async function toggleAvailability(t: Technician) {
     const next = !t.is_available;
     setBusyId(t.id);
@@ -414,6 +482,27 @@ export default function Technicians() {
                         <Pencil className="mr-2 h-4 w-4" />
                         Edit
                       </Button>
+
+                      {!tech.user_id && tech.email && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busyId === tech.id}
+                          onClick={() => sendInvite(tech)}
+                        >
+                          {busyId === tech.id ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Sending...
+                            </>
+                          ) : (
+                            <>
+                              <Mail className="mr-2 h-4 w-4" />
+                              Send Invite
+                            </>
+                          )}
+                        </Button>
+                      )}
 
                       <Button
                         size="sm"
