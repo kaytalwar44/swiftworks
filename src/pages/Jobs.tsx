@@ -74,8 +74,6 @@ const QR_HOST = ['api', 'qrserver', 'com'].join('.');
 const QR_API_BASE =
   'https://' + QR_HOST + '/v1/create-qr-code/?size=260x260&margin=12&data=';
 
-const APP_URL = 'https://swiftworks-seven.vercel.app';
-
 /** Postgres time columns come back as HH:MM:SS; the table reads better as HH:MM. */
 function formatTime(value: string | null): string {
   if (!value) return '-';
@@ -150,6 +148,9 @@ export default function Jobs() {
   const [qrFor, setQrFor] = useState<BookingLink | null>(null);
   const [linkBusyId, setLinkBusyId] = useState<string | null>(null);
 
+  /** job_id -> true when the job has at least one non-cancelled booking. */
+  const [lockedJobs, setLockedJobs] = useState<Record<string, boolean>>({});
+
   const loadJobs = useCallback(async () => {
     setLoading(true);
 
@@ -159,6 +160,22 @@ export default function Jobs() {
         'id, company_id, job_number, title, reference, status, priority, site_name, address_line1, address_line2, suburb, state, postcode, start_date, end_date, unit_count',
       )
       .order('job_number');
+
+    // A job with a live booking is locked: editing its dates or regenerating
+    // its slots would orphan or silently cancel a resident's appointment.
+    // customer_bookings has no FK documention to rely on here, so the lock map
+    // is built with one extra query rather than an embed.
+    const bookingRes = await (supabase as any)
+      .from('customer_bookings')
+      .select('job_id')
+      .neq('status', 'cancelled')
+      .is('deleted_at', null);
+
+    const locks: Record<string, boolean> = {};
+    for (const row of (bookingRes.data ?? []) as { job_id: string | null }[]) {
+      if (row.job_id) locks[row.job_id] = true;
+    }
+    setLockedJobs(locks);
 
     if (error) {
       console.error(error);
@@ -177,6 +194,12 @@ export default function Jobs() {
   }, [loadJobs]);
 
   function openEdit(job: Job) {
+    if (lockedJobs[job.id]) {
+      setNotice(
+        'This job has active customer bookings and cannot be modified.',
+      );
+      return;
+    }
     setEditingJob(job);
     setDraft(toDraft(job));
     setSaveError(null);
@@ -226,7 +249,7 @@ export default function Jobs() {
     setNotice(null);
 
     const token = crypto.randomUUID();
-    const bookingUrl = `${APP_URL}/book/${token}`;
+    const bookingUrl = `${window.location.origin}/book/${token}`;
 
     const { data, error } = await (supabase as any)
       .from('booking_links')
@@ -270,6 +293,14 @@ export default function Jobs() {
     e.preventDefault();
 
     if (!editingJob || !draft) return;
+
+    if (lockedJobs[editingJob.id]) {
+      setSaveError(
+        'This job has active customer bookings and cannot be modified.',
+      );
+      setSaving(false);
+      return;
+    }
 
     setSaving(true);
     setSaveError(null);
@@ -317,6 +348,13 @@ export default function Jobs() {
   }
 
   async function generateSlots(job: Job) {
+    if (lockedJobs[job.id]) {
+      setNotice(
+        'This job has active customer bookings and cannot be modified.',
+      );
+      return;
+    }
+
     setGeneratingId(job.id);
     setNotice(null);
 
@@ -468,7 +506,9 @@ export default function Jobs() {
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={generatingId === job.id}
+                      disabled={
+                        generatingId === job.id || !!lockedJobs[job.id]
+                      }
                       onClick={() => generateSlots(job)}
                     >
                       {generatingId === job.id ? (
@@ -539,6 +579,7 @@ export default function Jobs() {
                     <Button
                       size="sm"
                       variant="outline"
+                      disabled={!!lockedJobs[job.id]}
                       onClick={() => openEdit(job)}
                     >
                       <Pencil className="mr-2 h-4 w-4" />
@@ -549,6 +590,13 @@ export default function Jobs() {
                   {bookingLinks[job.id] && (
                     <p className="mt-2 break-all text-xs text-muted-foreground">
                       {bookingLinks[job.id].booking_url}
+                    </p>
+                  )}
+
+                  {lockedJobs[job.id] && (
+                    <p className="mt-2 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700">
+                      This job has active customer bookings and cannot be
+                      modified.
                     </p>
                   )}
                 </div>
