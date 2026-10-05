@@ -10,6 +10,7 @@ import {
   Info,
   Loader2,
   MapPin,
+  CalendarRange,
   Plus,
   QrCode,
   Star,
@@ -86,6 +87,17 @@ type TechnicianDashboard = {
   } | null;
 };
 
+/** Shape returned by technician_upcoming_bookings(). */
+type UpcomingBooking = {
+  booking_ref: string | null;
+  scheduled_date: string | null;
+  unit_number: string | null;
+  site_name: string | null;
+  local_start: string | null;
+  local_end: string | null;
+  status: string | null;
+};
+
 /** "08:00:00" -> "08:00" */
 function formatTime(value: string | null): string {
   return value ? value.slice(0, 5) : '-';
@@ -117,6 +129,18 @@ function TechnicianDashboardView() {
 });
       const rows = unwrap(response) as unknown as TechnicianDashboard[];
       return Array.isArray(rows) ? rows[0] : (rows as TechnicianDashboard);
+    },
+    refetchInterval: 60_000,
+  });
+
+  const { data: upcoming, isPending: upcomingPending } = useQuery({
+    queryKey: ['dashboard', 'technician', 'upcoming'],
+    queryFn: async () => {
+      const response = await (supabase as any).rpc(
+        'technician_upcoming_bookings',
+      );
+      const rows = unwrap(response) as unknown as UpcomingBooking[];
+      return Array.isArray(rows) ? rows : [];
     },
     refetchInterval: 60_000,
   });
@@ -270,6 +294,116 @@ function TechnicianDashboardView() {
                 </div>
               )}
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Upcoming bookings, next 90 days */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CalendarRange className="h-4 w-4" />
+            Upcoming bookings (next 90 days)
+          </CardTitle>
+        </CardHeader>
+
+        <CardContent>
+          {upcomingPending ? (
+            <div className="flex h-24 items-center justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : !upcoming || upcoming.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Nothing scheduled in the next 90 days.
+            </p>
+          ) : (
+            <>
+              {/* Card list on small screens, where a six-column table would crush */}
+              <div className="space-y-3 sm:hidden">
+                {upcoming.map((b, index) => (
+                  <div
+                    key={(b.booking_ref ?? 'booking') + index}
+                    className="rounded border p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium">
+                          {b.site_name || 'Scheduled visit'}
+                        </p>
+                        {b.booking_ref && (
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                            Ref {b.booking_ref}
+                          </p>
+                        )}
+                      </div>
+                      <span className="rounded bg-muted px-2 py-0.5 text-xs capitalize">
+                        {b.status || '-'}
+                      </span>
+                    </div>
+
+                    <dl className="mt-2 grid grid-cols-3 gap-x-3 gap-y-1 text-sm">
+                      <div>
+                        <dt className="sr-only">Date</dt>
+                        <dd className="tabular-nums">
+                          {formatDate(b.scheduled_date)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="sr-only">Time</dt>
+                        <dd className="tabular-nums">
+                          {formatTime(b.local_start)} -{' '}
+                          {formatTime(b.local_end)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="sr-only">Unit</dt>
+                        <dd>{b.unit_number || '-'}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                ))}
+              </div>
+
+              {/* Table on wider screens */}
+              <div className="hidden overflow-x-auto rounded border sm:block">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/60">
+                    <tr className="text-left">
+                      <th className="px-3 py-2 font-medium">Date</th>
+                      <th className="px-3 py-2 font-medium">Time</th>
+                      <th className="px-3 py-2 font-medium">Site</th>
+                      <th className="px-3 py-2 font-medium">Unit</th>
+                      <th className="px-3 py-2 font-medium">Ref</th>
+                      <th className="px-3 py-2 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {upcoming.map((b, index) => (
+                      <tr
+                        key={(b.booking_ref ?? 'booking') + index}
+                        className="border-t"
+                      >
+                        <td className="px-3 py-2 tabular-nums">
+                          {formatDate(b.scheduled_date)}
+                        </td>
+                        <td className="px-3 py-2 tabular-nums">
+                          {formatTime(b.local_start)} -{' '}
+                          {formatTime(b.local_end)}
+                        </td>
+                        <td className="px-3 py-2">{b.site_name || '-'}</td>
+                        <td className="px-3 py-2">{b.unit_number || '-'}</td>
+                        <td className="px-3 py-2 font-mono text-xs">
+                          {b.booking_ref || '-'}
+                        </td>
+                        <td className="px-3 py-2 capitalize">
+                          {b.status || '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
