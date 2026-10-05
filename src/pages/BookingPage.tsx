@@ -101,13 +101,6 @@ export default function BookingPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState<Slot | null>(null);
 
-  /**
-   * Generated once per mount and reused for every retry of this booking. The
-   * server maps it to the booking it already created, so a double submit
-   * returns the original rather than booking a second slot.
-   */
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
-
   const loadBooking = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -231,40 +224,31 @@ export default function BookingPage() {
 
     // Booking goes through the secure RPC so capacity is checked and
     // incremented atomically on the server.
-    // create_booking() is the modern entry point. Unlike the legacy
-    // booking_create(), it validates the QR token, rate-limits, claims the slot
-    // under a row lock, upserts the customer and writes scheduled_date /
-    // scheduled_start / scheduled_end plus the job's assigned technician onto
-    // the booking — all in one transaction.
     const { error } = await (supabase as any).rpc('booking_create', {
-      p_qr_token: link.token,
+      p_token: link.token,
       p_slot_id: selectedSlot.id,
-      p_unit_number: form.unit_number.trim(),
-      p_phone: form.mobile.replace(/[\s-]/g, ''),
-      p_email: form.email.trim().toLowerCase(),
       p_full_name: form.full_name.trim(),
-      p_special_comments: null,
-      // Reused across retries within this attempt so a double-tap on a slow
-      // connection returns the original booking instead of creating a second.
-      p_idempotency_key: idempotencyKey,
-      p_ip_address: null,
-      p_user_agent: null,
-      p_session_id: null,
+      p_mobile: form.mobile.replace(/[\s-]/g, ''),
+      p_email: form.email.trim().toLowerCase(),
+      p_unit_number: form.unit_number.trim(),
     });
 
+    console.log('RPC ERROR:', error);
     setSubmitting(false);
 
     if (error) {
       const msg = String(error.message || '');
       if (
-        msg.toLowerCase().includes('full') ||
-        msg.toLowerCase().includes('capacity')
-      ) {
-        setSubmitError('Sorry, that slot has just filled. Please choose another.');
-        setSelectedSlotId(null);
-        void loadBooking();
-        return;
-      }
+  msg.toLowerCase().includes('full') ||
+  msg.toLowerCase().includes('capacity')
+) {
+  console.error('BOOKING ERROR:', error);
+  console.error('BOOKING MESSAGE:', msg);
+
+  setSubmitError(`RAW ERROR: ${msg}`);
+  return;
+}
+
       setSubmitError(msg || 'Booking failed. Please try again.');
       return;
     }
