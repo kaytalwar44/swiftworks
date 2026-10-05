@@ -176,7 +176,7 @@ function TechnicianDashboardView() {
       </div>
 
       {/* KPI cards */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <KpiCard
           label="Today's jobs"
           value={data.today.total}
@@ -511,28 +511,23 @@ export default function Dashboard() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label="Active jobs"
-          value={summary.jobs.published + summary.jobs.in_progress}
+                    value={summary.jobs.total - summary.jobs.completed}
           hint={`${summary.jobs.total} total · ${summary.jobs.completed} complete`}
           icon={Building2}
         />
         <KpiCard
-          label="Bookings today"
-          value={summary.bookings.today}
-          hint={`${summary.bookings.confirmed} confirmed awaiting install`}
-          icon={CalendarCheck}
-        />
-        <KpiCard
-          label="Open capacity"
-          value={summary.slots.capacity}
-          hint={`${summary.slots.open} open slots`}
-          icon={CalendarDays}
-        />
-        <KpiCard
-          label="QR conversion"
-          value={`${summary.qr.conversion_rate}%`}
-          hint={`${summary.qr.scans} scans · ${summary.qr.active} active codes`}
-          icon={QrCode}
-        />
+  label="Bookings today"
+  value={summary.bookings.today}
+  hint={`${summary.bookings.confirmed} confirmed awaiting install`}
+  icon={CalendarCheck}
+/>
+
+<KpiCard
+  label="QR conversion"
+  value={`${summary.qr.conversion_rate}%`}
+  hint={`${summary.qr.scans} scans · ${summary.qr.active} active codes`}
+  icon={QrCode}
+/>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
