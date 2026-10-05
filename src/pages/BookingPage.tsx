@@ -236,7 +236,7 @@ export default function BookingPage() {
     // under a row lock, upserts the customer and writes scheduled_date /
     // scheduled_start / scheduled_end plus the job's assigned technician onto
     // the booking — all in one transaction.
-    const { error } = await (supabase as any).rpc('create_booking', {
+    const { error } = await (supabase as any).rpc('booking_create', {
       p_qr_token: link.token,
       p_slot_id: selectedSlot.id,
       p_unit_number: form.unit_number.trim(),
