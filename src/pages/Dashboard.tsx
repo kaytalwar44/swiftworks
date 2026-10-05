@@ -4,13 +4,14 @@ import {
   Building2,
   CalendarCheck,
   CalendarDays,
+  CalendarRange,
   Clock,
   DollarSign,
   HardHat,
   Info,
   Loader2,
   MapPin,
-  CalendarRange,
+  Phone,
   Plus,
   QrCode,
   Star,
@@ -89,13 +90,14 @@ type TechnicianDashboard = {
 
 /** Shape returned by technician_upcoming_bookings(). */
 type UpcomingBooking = {
-  booking_ref: string | null;
   scheduled_date: string | null;
-  unit_number: string | null;
-  site_name: string | null;
   local_start: string | null;
   local_end: string | null;
-  status: string | null;
+  site_name: string | null;
+  address: string | null;
+  unit_number: string | null;
+  customer_name: string | null;
+  phone_number: string | null;
 };
 
 /** "08:00:00" -> "08:00" */
@@ -318,85 +320,111 @@ function TechnicianDashboardView() {
             </p>
           ) : (
             <>
-              {/* Card list on small screens, where a six-column table would crush */}
-              <div className="space-y-3 sm:hidden">
+              {/* Card list on small screens, where a seven-column table would crush */}
+              <div className="space-y-3 lg:hidden">
                 {upcoming.map((b, index) => (
                   <div
-                    key={(b.booking_ref ?? 'booking') + index}
+                    key={(b.phone_number ?? 'booking') + index}
                     className="rounded border p-3"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-medium">
-                          {b.site_name || 'Scheduled visit'}
-                        </p>
-                        {b.booking_ref && (
-                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                            Ref {b.booking_ref}
-                          </p>
-                        )}
-                      </div>
-                      <span className="rounded bg-muted px-2 py-0.5 text-xs capitalize">
-                        {b.status || '-'}
-                      </span>
-                    </div>
+                    <p className="font-medium">
+                      {b.site_name || 'Scheduled visit'}
+                    </p>
 
-                    <dl className="mt-2 grid grid-cols-3 gap-x-3 gap-y-1 text-sm">
+                    {b.address && (
+                      <div className="mt-1 flex items-start gap-2 text-sm text-muted-foreground">
+                        <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>{b.address}</span>
+                      </div>
+                    )}
+
+                    <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
                       <div>
-                        <dt className="sr-only">Date</dt>
+                        <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Date
+                        </dt>
                         <dd className="tabular-nums">
                           {formatDate(b.scheduled_date)}
                         </dd>
                       </div>
                       <div>
-                        <dt className="sr-only">Time</dt>
+                        <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Time
+                        </dt>
                         <dd className="tabular-nums">
                           {formatTime(b.local_start)} -{' '}
                           {formatTime(b.local_end)}
                         </dd>
                       </div>
                       <div>
-                        <dt className="sr-only">Unit</dt>
+                        <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Unit
+                        </dt>
                         <dd>{b.unit_number || '-'}</dd>
                       </div>
+                      <div>
+                        <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Customer
+                        </dt>
+                        <dd>{b.customer_name || '-'}</dd>
+                      </div>
                     </dl>
+
+                    {b.phone_number && (
+                      <a
+                        href={'tel:' + b.phone_number}
+                        className="mt-2 inline-flex items-center gap-2 text-sm font-medium text-primary underline-offset-2 hover:underline"
+                      >
+                        <Phone className="h-4 w-4" />
+                        {b.phone_number}
+                      </a>
+                    )}
                   </div>
                 ))}
               </div>
 
               {/* Table on wider screens */}
-              <div className="hidden overflow-x-auto rounded border sm:block">
+              <div className="hidden overflow-x-auto rounded border lg:block">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/60">
                     <tr className="text-left">
                       <th className="px-3 py-2 font-medium">Date</th>
                       <th className="px-3 py-2 font-medium">Time</th>
                       <th className="px-3 py-2 font-medium">Site</th>
+                      <th className="px-3 py-2 font-medium">Address</th>
                       <th className="px-3 py-2 font-medium">Unit</th>
-                      <th className="px-3 py-2 font-medium">Ref</th>
-                      <th className="px-3 py-2 font-medium">Status</th>
+                      <th className="px-3 py-2 font-medium">Customer</th>
+                      <th className="px-3 py-2 font-medium">Phone</th>
                     </tr>
                   </thead>
                   <tbody>
                     {upcoming.map((b, index) => (
                       <tr
-                        key={(b.booking_ref ?? 'booking') + index}
+                        key={(b.phone_number ?? 'booking') + index}
                         className="border-t"
                       >
-                        <td className="px-3 py-2 tabular-nums">
+                        <td className="px-3 py-2 whitespace-nowrap tabular-nums">
                           {formatDate(b.scheduled_date)}
                         </td>
-                        <td className="px-3 py-2 tabular-nums">
+                        <td className="px-3 py-2 whitespace-nowrap tabular-nums">
                           {formatTime(b.local_start)} -{' '}
                           {formatTime(b.local_end)}
                         </td>
                         <td className="px-3 py-2">{b.site_name || '-'}</td>
+                        <td className="px-3 py-2">{b.address || '-'}</td>
                         <td className="px-3 py-2">{b.unit_number || '-'}</td>
-                        <td className="px-3 py-2 font-mono text-xs">
-                          {b.booking_ref || '-'}
-                        </td>
-                        <td className="px-3 py-2 capitalize">
-                          {b.status || '-'}
+                        <td className="px-3 py-2">{b.customer_name || '-'}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          {b.phone_number ? (
+                            <a
+                              href={'tel:' + b.phone_number}
+                              className="text-primary underline-offset-2 hover:underline"
+                            >
+                              {b.phone_number}
+                            </a>
+                          ) : (
+                            '-'
+                          )}
                         </td>
                       </tr>
                     ))}
