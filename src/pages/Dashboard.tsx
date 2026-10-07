@@ -183,7 +183,8 @@ function TechnicianDashboardView() {
     const payload: Record<string, unknown> =
       kind === 'complete'
         ? { status: 'completed', completed_at: new Date().toISOString() }
-        : { status: 'no_show', no_show_at: new Date().toISOString() };
+        : { status: 'no_show' };
+``
 
     const { data, error } = await (supabase as any)
       .from('customer_bookings')
