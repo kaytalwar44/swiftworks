@@ -3,10 +3,12 @@ import {
   CalendarDays,
   ChevronDown,
   ChevronUp,
+  CheckCircle2,
   HardHat,
   Loader2,
   MapPin,
   Phone,
+  UserX,
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase/client';
@@ -60,6 +62,17 @@ export default function TechnicianPortal() {
   const [bookings, setBookings] = useState<Record<string, PortalBooking[]>>({});
   const [bookingsLoadingId, setBookingsLoadingId] = useState<string | null>(null);
   const [bookingsError, setBookingsError] = useState<string | null>(null);
+
+  /** booking id mid-request, so only that row's button spins. */
+  const [actingId, setActingId] = useState<string | null>(null);
+  /** booking awaiting confirmation, with which action was asked for. */
+  const [pendingAction, setPendingAction] = useState<{
+    booking: PortalBooking;
+    jobId: string;
+    kind: 'complete' | 'rejected';
+  } | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const loadJobs = useCallback(async () => {
     setLoading(true);
@@ -123,6 +136,68 @@ export default function TechnicianPortal() {
     }));
   }
 
+  /**
+   * Marks a booking installed or rejected, then reloads that job's bookings so
+   * the finished row leaves the expanded list straight away.
+   *
+   * Scoped by id only: technician_portal_bookings already refused to return the
+   * row unless the job belongs to the caller, and row-level security is what
+   * stops a write to anyone else's booking. .select('id') is deliberate — an
+   * update matching no rows returns no error, so without it a blocked write
+   * would read as success and the row would stay on screen.
+   */
+  async function runAction() {
+    if (!pendingAction) return;
+
+    const { booking, jobId, kind } = pendingAction;
+    setActingId(booking.booking_id);
+    setActionError(null);
+    setActionNotice(null);
+
+    const payload: Record<string, unknown> =
+      kind === 'complete'
+        ? { status: 'completed', completed_at: new Date().toISOString() }
+        : { status: 'no_show' };
+
+    const { data, error: updError } = await (supabase as any)
+      .from('customer_bookings')
+      .update(payload)
+      .eq('id', booking.booking_id)
+      .select('id');
+
+    setActingId(null);
+
+    if (updError) {
+      setActionError(updError.message);
+      setPendingAction(null);
+      return;
+    }
+
+    if ((data ?? []).length === 0) {
+      setActionError(
+        'The booking was not updated. It may be blocked by a permissions rule.',
+      );
+      setPendingAction(null);
+      return;
+    }
+
+    setPendingAction(null);
+    setActionNotice(
+      kind === 'complete'
+        ? 'Booking marked as installed.'
+        : 'Booking marked as rejected.',
+    );
+
+    // Drop this job's cached bookings so the row disappears at once, then
+    // refetch the job list so the card's booking count follows.
+    setBookings((prev) => {
+      const next = { ...prev };
+      delete next[jobId];
+      return next;
+    });
+    await loadJobs();
+  }
+
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4 px-4 py-6">
       <div className="flex items-center gap-3">
@@ -134,6 +209,21 @@ export default function TechnicianPortal() {
           </p>
         </div>
       </div>
+
+      {actionNotice && (
+        <div className="rounded border bg-muted/40 p-3 text-sm">
+          {actionNotice}
+        </div>
+      )}
+
+      {actionError && (
+        <div
+          role="alert"
+          className="rounded border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+        >
+          {actionError}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex h-32 items-center justify-center">
@@ -258,6 +348,50 @@ export default function TechnicianPortal() {
                                 No phone
                               </div>
                             )}
+
+                            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                              <Button
+                                size="sm"
+                                className="h-10 flex-1"
+                                disabled={actingId === b.booking_id}
+                                onClick={() =>
+                                  setPendingAction({
+                                    booking: b,
+                                    jobId: job.job_id,
+                                    kind: 'complete',
+                                  })
+                                }
+                              >
+                                {actingId === b.booking_id ? (
+                                  <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Saving...
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                                    Install Complete
+                                  </>
+                                )}
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-10 flex-1"
+                                disabled={actingId === b.booking_id}
+                                onClick={() =>
+                                  setPendingAction({
+                                    booking: b,
+                                    jobId: job.job_id,
+                                    kind: 'rejected',
+                                  })
+                                }
+                              >
+                                <UserX className="mr-2 h-4 w-4" />
+                                Customer Rejected
+                              </Button>
+                            </div>
                           </div>
                         ))
                       )}
@@ -267,6 +401,73 @@ export default function TechnicianPortal() {
               </Card>
             );
           })}
+        </div>
+      )}
+
+      {/* Confirmation for the two booking actions */}
+      {pendingAction && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="portal-confirm-title"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setPendingAction(null);
+          }}
+          tabIndex={-1}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPendingAction(null);
+          }}
+        >
+          <div className="w-full max-w-sm space-y-4 rounded-lg border bg-background p-5 shadow-xl">
+            <div>
+              <h2 id="portal-confirm-title" className="text-lg font-semibold">
+                {pendingAction.kind === 'complete'
+                  ? 'Mark as installed?'
+                  : 'Mark as customer rejected?'}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {pendingAction.booking.customer_name || 'This customer'}
+                {pendingAction.booking.unit_number
+                  ? ' - Unit ' + pendingAction.booking.unit_number
+                  : ''}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {formatDate(pendingAction.booking.slot_date)} -{' '}
+                {formatTimeRange(
+                  pendingAction.booking.local_start,
+                  pendingAction.booking.local_end,
+                )}
+              </p>
+            </div>
+
+            <p className="text-sm">
+              {pendingAction.kind === 'complete'
+                ? 'This marks the installation complete and removes it from this job.'
+                : 'This records that the customer refused the installation and removes it from this job.'}
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setPendingAction(null)}>
+                Cancel
+              </Button>
+              <Button
+                disabled={actingId !== null}
+                onClick={() => void runAction()}
+              >
+                {actingId !== null ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : pendingAction.kind === 'complete' ? (
+                  'Mark installed'
+                ) : (
+                  'Mark rejected'
+                )}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
