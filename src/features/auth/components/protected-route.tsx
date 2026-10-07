@@ -13,18 +13,27 @@ interface ProtectedRouteProps {
    * here is a convenience, never the security boundary.
    */
   permission?: string;
+  /**
+   * Permits a technician to render this route. Set only on the technician
+   * portal — everywhere else a technician is redirected to /tech.
+   */
+  allowTechnician?: boolean;
 }
 
 /**
  * Gate for every authenticated operator route.
  *
- * Resolves in order: still loading -> session? -> profile loaded? -> permitted?
- * A signed-out user is bounced to /login with the attempted path preserved, so
- * signing in returns them to where they were headed.
+ * Resolves in order: still loading -> session? -> profile loaded? -> role? ->
+ * permitted? A signed-out user is bounced to /login with the attempted path
+ * preserved, so signing in returns them to where they were headed.
  */
-export function ProtectedRoute({ children, permission }: ProtectedRouteProps) {
+export function ProtectedRoute({
+  children,
+  permission,
+  allowTechnician = false,
+}: ProtectedRouteProps) {
   const location = useLocation();
-  const { authUser, user, isLoading, error, hasPermission } = useAuth();
+  const { authUser, user, isLoading, error, hasPermission, hasRole } = useAuth();
 
   // The session and profile resolve in sequence. Rendering anything before
   // both settle would flash the login screen at a user who is already signed in.
@@ -55,6 +64,14 @@ export function ProtectedRoute({ children, permission }: ProtectedRouteProps) {
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // A technician holds bookings.read, so the permission check below would let
+  // them into /bookings. Their work lives in the portal, and every operator
+  // screen assumes tools they do not have — so role wins over permission here.
+  // allowTechnician is set only on the /tech route itself.
+  if (hasRole('technician') && !allowTechnician) {
+    return <Navigate to="/tech" replace />;
   }
 
   if (permission && !hasPermission(permission)) {

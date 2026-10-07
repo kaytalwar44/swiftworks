@@ -16,8 +16,6 @@ const DashboardPage = lazy(() => import('@/pages/Dashboard'));
 
 const JobsPage = lazy(() => import('@/pages/Jobs'));
 const BookingsPage = lazy(() => import('@/pages/Bookings'));
-const SchedulePage = lazy(() => import('@/pages/Schedule'));
-const CustomersPage = lazy(() => import('@/pages/Customers'));
 const PartnersPage = lazy(() => import('@/pages/Partners'));
 const TechniciansPage = lazy(() => import('@/pages/Technicians'));
 const RateCardsPage = lazy(() => import('@/pages/RateCards'));
@@ -37,17 +35,20 @@ export default function App() {
 
           {/* ---------- Technician portal ---------- */}
           {/* Authenticated, but outside AppShell: a technician must never
-              render the operator chrome. */}
+              render the operator chrome. allowTechnician is what stops the
+              guard below from bouncing a technician off their own portal. */}
           <Route
             path="/tech"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute allowTechnician>
                 <TechnicianPortalPage />
               </ProtectedRoute>
             }
           />
 
           {/* ---------- Authenticated operator console ---------- */}
+          {/* Every route in here is operator-only. A technician who types one
+              of these paths is redirected to /tech by ProtectedRoute. */}
           <Route
             element={
               <ProtectedRoute>
@@ -61,9 +62,7 @@ export default function App() {
             <Route path="/jobs" element={<JobsPage />} />
             <Route path="/jobs/new" element={<JobCreatePage />} />
             <Route path="/bookings" element={<BookingsPage />} />
-            <Route path="/schedule" element={<SchedulePage />} />
 
-            <Route path="/customers" element={<CustomersPage />} />
             <Route path="/partners" element={<PartnersPage />} />
             <Route path="/technicians" element={<TechniciansPage />} />
 

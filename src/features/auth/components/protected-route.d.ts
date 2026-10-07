@@ -8,14 +8,19 @@ interface ProtectedRouteProps {
      * here is a convenience, never the security boundary.
      */
     permission?: string;
+    /**
+     * Permits a technician to render this route. Set only on the technician
+     * portal — everywhere else a technician is redirected to /tech.
+     */
+    allowTechnician?: boolean;
 }
 /**
  * Gate for every authenticated operator route.
  *
- * Resolves in order: still loading -> session? -> profile loaded? -> permitted?
- * A signed-out user is bounced to /login with the attempted path preserved, so
- * signing in returns them to where they were headed.
+ * Resolves in order: still loading -> session? -> profile loaded? -> role? ->
+ * permitted? A signed-out user is bounced to /login with the attempted path
+ * preserved, so signing in returns them to where they were headed.
  */
-export declare function ProtectedRoute({ children, permission }: ProtectedRouteProps): import("react").JSX.Element;
+export declare function ProtectedRoute({ children, permission, allowTechnician, }: ProtectedRouteProps): import("react").JSX.Element;
 export default ProtectedRoute;
 //# sourceMappingURL=protected-route.d.ts.map

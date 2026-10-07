@@ -6,11 +6,9 @@ import {
   Gauge,
   HardHat,
   Handshake,
-  QrCode,
   Receipt,
   Settings,
   ShieldCheck,
-  Users,
 } from 'lucide-react';
 
 import { useAuth } from '@/features/auth/providers/auth-provider';
@@ -26,6 +24,15 @@ interface NavItem {
   icon: typeof Gauge;
   /** Permission required to see this entry. Omitted means always visible. */
   permission?: string;
+  /**
+   * Hidden from technicians even when they hold the permission.
+   *
+   * A technician carries bookings.read, so permission alone would leave the
+   * Bookings entry visible. These are operator screens: their layouts assume
+   * tools a technician does not have, and a technician's own work lives in the
+   * portal at /tech.
+   */
+  operatorOnly?: boolean;
 }
 
 interface NavSection {
@@ -41,37 +48,79 @@ const SECTIONS: NavSection[] = [
   {
     title: 'Operations',
     items: [
-      { to: '/jobs', label: 'Jobs', icon: Building2, permission: 'jobs.read' },
-      { to: '/bookings', label: 'Bookings', icon: CalendarDays, permission: 'bookings.read' },
-      { to: '/schedule', label: 'Schedule', icon: QrCode, permission: 'jobs.read' },
+      {
+        to: '/jobs',
+        label: 'Jobs',
+        icon: Building2,
+        permission: 'jobs.read',
+        operatorOnly: true,
+      },
+      {
+        to: '/bookings',
+        label: 'Bookings',
+        icon: CalendarDays,
+        permission: 'bookings.read',
+        operatorOnly: true,
+      },
     ],
   },
   {
     title: 'Directory',
     items: [
-      { to: '/customers', label: 'Customers', icon: Users, permission: 'customers.read' },
-      { to: '/partners', label: 'Partners', icon: Handshake, permission: 'partners.read' },
-      { to: '/technicians', label: 'Technicians', icon: HardHat, permission: 'technicians.read' },
+      {
+        to: '/partners',
+        label: 'Partners',
+        icon: Handshake,
+        permission: 'partners.read',
+        operatorOnly: true,
+      },
+      {
+        to: '/technicians',
+        label: 'Technicians',
+        icon: HardHat,
+        permission: 'technicians.read',
+        operatorOnly: true,
+      },
     ],
   },
   {
     title: 'Finance',
     items: [
-      { to: '/rates', label: 'Rate cards', icon: Receipt, permission: 'rates.read' },
-      { to: '/invoices', label: 'Invoices', icon: FileText, permission: 'invoices.read' },
+      {
+        to: '/rates',
+        label: 'Rate cards',
+        icon: Receipt,
+        permission: 'rates.read',
+        operatorOnly: true,
+      },
+      {
+        to: '/invoices',
+        label: 'Invoices',
+        icon: FileText,
+        permission: 'invoices.read',
+        operatorOnly: true,
+      },
     ],
   },
   {
     title: 'Administration',
     items: [
-      { to: '/team', label: 'Team', icon: ShieldCheck, permission: 'users.manage' },
-      { to: '/settings', label: 'Settings', icon: Settings },
+      {
+        to: '/team',
+        label: 'Team',
+        icon: ShieldCheck,
+        permission: 'users.manage',
+        operatorOnly: true,
+      },
+      { to: '/settings', label: 'Settings', icon: Settings, operatorOnly: true },
     ],
   },
 ];
 
 export function Sidebar({ onNavigate }: SidebarProps) {
-  const { hasPermission } = useAuth();
+  const { hasPermission, hasRole } = useAuth();
+
+  const isTechnician = hasRole('technician');
 
   return (
     <nav className="flex h-full flex-col gap-6 overflow-y-auto px-3 py-4">
@@ -80,10 +129,12 @@ export function Sidebar({ onNavigate }: SidebarProps) {
       </div>
 
       {SECTIONS.map((section) => {
-        // Hide a whole section when the user holds none of its permissions,
-        // so an operator is not shown headings with nothing beneath them.
+        // Hide a whole section when nothing in it is visible, so nobody is
+        // shown a heading with nothing beneath it.
         const visible = section.items.filter(
-          (item) => !item.permission || hasPermission(item.permission),
+          (item) =>
+            (!item.permission || hasPermission(item.permission)) &&
+            !(item.operatorOnly && isTechnician),
         );
         if (visible.length === 0) return null;
 
