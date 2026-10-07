@@ -79,6 +79,29 @@ export default function Bookings() {
     loadBookings();
   }, []);
 
+  // Earliest booking first. Sorted on the joined slot's date and local start
+  // rather than server-side, because PostgREST orders on the parent table and
+  // cannot order by an embedded resource's columns. Rows with no slot fall to
+  // the end so they do not push real bookings down the list.
+  const sortedBookings = [...bookings].sort((a, b) => {
+    const dateA = a.job_slots?.slot_date ?? '';
+    const dateB = b.job_slots?.slot_date ?? '';
+
+    if (dateA !== dateB) {
+      if (!dateA) return 1;
+      if (!dateB) return -1;
+      return dateA < dateB ? -1 : 1;
+    }
+
+    const startA = a.job_slots?.local_start ?? '';
+    const startB = b.job_slots?.local_start ?? '';
+
+    if (startA === startB) return 0;
+    if (!startA) return 1;
+    if (!startB) return -1;
+    return startA < startB ? -1 : 1;
+  });
+
   return (
     <div className="space-y-6">
       <div>
@@ -126,7 +149,7 @@ export default function Bookings() {
                   </tr>
                 </thead>
                 <tbody>
-                  {bookings.map((booking) => (
+                  {sortedBookings.map((booking) => (
                     <tr key={booking.id} className="border-t align-top">
                       <td className="px-3 py-2 font-medium">
                         {booking.full_name || 'Unknown Customer'}
