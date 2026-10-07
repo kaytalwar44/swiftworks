@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays,
   ChevronDown,
@@ -13,23 +13,25 @@ import { supabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
-type PortalJob = {
-  job_id: string;
-  job_title: string | null;
-  job_number: string | null;
-  address: string | null;
-  booking_count: number;
-};
-
-type PortalBooking = {
-  booking_id: string;
-  customer_name: string | null;
-  slot_date: string | null;
+/** One row from technician_upcoming_bookings(). */
+type UpcomingBooking = {
+  id: string;
+  scheduled_date: string | null;
   local_start: string | null;
   local_end: string | null;
+  site_name: string | null;
+  address: string | null;
   unit_number: string | null;
-  phone: string | null;
-  status: string | null;
+  customer_name: string | null;
+  phone_number: string | null;
+};
+
+/** Bookings grouped under the site they belong to. */
+type PortalJob = {
+  key: string;
+  site_name: string | null;
+  address: string | null;
+  bookings: UpcomingBooking[];
 };
 
 /** 2026-10-05 -> Mon 05 Oct */
@@ -52,75 +54,60 @@ function formatTimeRange(start: string | null, end: string | null): string {
 }
 
 export default function TechnicianPortal() {
-  const [jobs, setJobs] = useState<PortalJob[]>([]);
+  const [bookings, setBookings] = useState<UpcomingBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useState<string | null>(null);
 
-  const [openJobId, setOpenJobId] = useState<string | null>(null);
-  const [bookings, setBookings] = useState<Record<string, PortalBooking[]>>({});
-  const [bookingsLoadingId, setBookingsLoadingId] = useState<string | null>(null);
-  const [bookingsError, setBookingsError] = useState<string | null>(null);
-
-  const loadJobs = useCallback(async () => {
+  const loadBookings = useCallback(async () => {
     setLoading(true);
     setError(null);
 
+    // Resolves the calling technician server-side and returns their
+    // non-finished bookings for the next 90 days, already date-ordered.
     const { data, error: rpcError } = await (supabase as any).rpc(
-      'technician_portal_jobs',
+      'technician_upcoming_bookings',
     );
 
     if (rpcError) {
-      console.error('technician_portal_jobs failed', rpcError);
+      console.error('technician_upcoming_bookings failed', rpcError);
       setError(rpcError.message);
       setLoading(false);
       return;
     }
 
-    setJobs(
-      ((data ?? []) as any[]).map((row) => ({
-        ...row,
-        booking_count: Number(row.booking_count ?? 0),
-      })) as PortalJob[],
-    );
+    setBookings((data ?? []) as UpcomingBooking[]);
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    void loadJobs();
-  }, [loadJobs]);
+    void loadBookings();
+  }, [loadBookings]);
 
-  async function toggleBookings(jobId: string) {
-    setBookingsError(null);
-
-    if (openJobId === jobId) {
-      setOpenJobId(null);
-      return;
+  // The RPC returns no job id, so a job card is the set of bookings sharing a
+  // site and address. Insertion order is kept, so the job with the earliest
+  // booking appears first.
+  const jobs = useMemo<PortalJob[]>(() => {
+    const map = new Map<string, PortalJob>();
+    for (const b of bookings) {
+      const key = (b.site_name ?? '') + '|' + (b.address ?? '');
+      let job = map.get(key);
+      if (!job) {
+        job = {
+          key,
+          site_name: b.site_name,
+          address: b.address,
+          bookings: [],
+        };
+        map.set(key, job);
+      }
+      job.bookings.push(b);
     }
+    return Array.from(map.values());
+  }, [bookings]);
 
-    setOpenJobId(jobId);
-
-    // Already loaded this session.
-    if (bookings[jobId]) return;
-
-    setBookingsLoadingId(jobId);
-
-    const { data, error: rpcError } = await (supabase as any).rpc(
-      'technician_portal_bookings',
-      { p_job_id: jobId },
-    );
-
-    setBookingsLoadingId(null);
-
-    if (rpcError) {
-      console.error('technician_portal_bookings failed', rpcError);
-      setBookingsError(rpcError.message);
-      return;
-    }
-
-    setBookings((prev) => ({
-      ...prev,
-      [jobId]: (data ?? []) as PortalBooking[],
-    }));
+  function toggleBookings(key: string) {
+    setOpenKey((current) => (current === key ? null : key));
   }
 
   return (
@@ -130,7 +117,7 @@ export default function TechnicianPortal() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">My Jobs</h1>
           <p className="text-sm text-muted-foreground">
-            Jobs assigned to you
+            Upcoming work for the next 90 days
           </p>
         </div>
       </div>
@@ -149,25 +136,20 @@ export default function TechnicianPortal() {
       ) : jobs.length === 0 ? (
         <Card>
           <CardContent className="p-6 text-center text-sm text-muted-foreground">
-            No jobs are assigned to you yet.
+            No upcoming bookings are assigned to you.
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
           {jobs.map((job) => {
-            const isOpen = openJobId === job.job_id;
-            const jobBookings = bookings[job.job_id] ?? [];
+            const isOpen = openKey === job.key;
+            const count = job.bookings.length;
 
             return (
-              <Card key={job.job_id}>
+              <Card key={job.key}>
                 <CardContent className="space-y-3 p-4">
-                  <div>
-                    <div className="text-base font-semibold leading-tight">
-                      {job.job_title || 'Untitled Job'}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      Job #: {job.job_number || '-'}
-                    </div>
+                  <div className="text-base font-semibold leading-tight">
+                    {job.site_name || 'Scheduled site'}
                   </div>
 
                   {job.address && (
@@ -180,15 +162,14 @@ export default function TechnicianPortal() {
                   <div className="flex items-center gap-2 text-sm">
                     <CalendarDays className="h-4 w-4 text-muted-foreground" />
                     <span>
-                      {job.booking_count}{' '}
-                      {job.booking_count === 1 ? 'booking' : 'bookings'}
+                      {count} {count === 1 ? 'booking' : 'bookings'}
                     </span>
                   </div>
 
                   <Button
                     variant="outline"
                     className="h-11 w-full"
-                    onClick={() => toggleBookings(job.job_id)}
+                    onClick={() => toggleBookings(job.key)}
                   >
                     {isOpen ? (
                       <>
@@ -205,62 +186,45 @@ export default function TechnicianPortal() {
 
                   {isOpen && (
                     <div className="space-y-2 border-t pt-3">
-                      {bookingsLoadingId === job.job_id ? (
-                        <div className="flex h-16 items-center justify-center">
-                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                        </div>
-                      ) : bookingsError ? (
-                        <p
-                          role="alert"
-                          className="rounded border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+                      {job.bookings.map((b) => (
+                        <div
+                          key={b.id}
+                          className="rounded border bg-muted/30 p-3"
                         >
-                          {bookingsError}
-                        </p>
-                      ) : jobBookings.length === 0 ? (
-                        <p className="py-2 text-center text-sm text-muted-foreground">
-                          No bookings for this job.
-                        </p>
-                      ) : (
-                        jobBookings.map((b) => (
-                          <div
-                            key={b.booking_id}
-                            className="rounded border bg-muted/30 p-3"
-                          >
-                            <div className="font-medium">
-                              {b.customer_name || 'Unknown Customer'}
-                            </div>
-
-                            <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
-                              <div>
-                                <span className="text-muted-foreground">Date: </span>
-                                {formatDate(b.slot_date)}
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Time: </span>
-                                {formatTimeRange(b.local_start, b.local_end)}
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Unit: </span>
-                                {b.unit_number || '-'}
-                              </div>
-                            </div>
-
-                            {b.phone ? (
-                              <a
-                                href={'tel:' + b.phone}
-                                className="mt-2 inline-flex items-center gap-2 text-sm font-medium text-primary underline-offset-2 hover:underline"
-                              >
-                                <Phone className="h-4 w-4" />
-                                {b.phone}
-                              </a>
-                            ) : (
-                              <div className="mt-2 text-sm text-muted-foreground">
-                                No phone
-                              </div>
-                            )}
+                          <div className="font-medium">
+                            {b.customer_name || 'Unknown Customer'}
                           </div>
-                        ))
-                      )}
+
+                          <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
+                            <div>
+                              <span className="text-muted-foreground">Date: </span>
+                              {formatDate(b.scheduled_date)}
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Time: </span>
+                              {formatTimeRange(b.local_start, b.local_end)}
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Unit: </span>
+                              {b.unit_number || '-'}
+                            </div>
+                          </div>
+
+                          {b.phone_number ? (
+                            <a
+                              href={'tel:' + b.phone_number}
+                              className="mt-2 inline-flex items-center gap-2 text-sm font-medium text-primary underline-offset-2 hover:underline"
+                            >
+                              <Phone className="h-4 w-4" />
+                              {b.phone_number}
+                            </a>
+                          ) : (
+                            <div className="mt-2 text-sm text-muted-foreground">
+                              No phone
+                            </div>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </CardContent>
