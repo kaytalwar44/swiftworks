@@ -1,10 +1,12 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import {
   Building2,
   CalendarCheck,
   CalendarDays,
   CalendarRange,
+  CheckCircle2,
   Clock,
   DollarSign,
   HardHat,
@@ -16,6 +18,7 @@ import {
   QrCode,
   Star,
   TrendingUp,
+  UserX,
   Users,
 } from 'lucide-react';
 import { supabase, unwrap } from '@/lib/supabase/client';
@@ -90,6 +93,7 @@ type TechnicianDashboard = {
 
 /** Shape returned by technician_upcoming_bookings(). */
 type UpcomingBooking = {
+  id: string;
   scheduled_date: string | null;
   local_start: string | null;
   local_end: string | null;
@@ -135,6 +139,18 @@ function TechnicianDashboardView() {
     refetchInterval: 60_000,
   });
 
+  const queryClient = useQueryClient();
+
+  /** booking id currently being actioned. */
+  const [actingId, setActingId] = useState<string | null>(null);
+  /** booking awaiting confirmation, with which action was requested. */
+  const [pendingAction, setPendingAction] = useState<{
+    booking: UpcomingBooking;
+    kind: 'complete' | 'no_show';
+  } | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
   const { data: upcoming, isPending: upcomingPending } = useQuery({
     queryKey: ['dashboard', 'technician', 'upcoming'],
     queryFn: async () => {
@@ -146,6 +162,63 @@ function TechnicianDashboardView() {
     },
     refetchInterval: 60_000,
   });
+
+  /**
+   * Marks a booking installed or a no-show.
+   *
+   * Scoped by id only: the RPC has already resolved this row for the calling
+   * technician, and row-level security is what stops a technician touching
+   * someone else's booking. .select('id') is deliberate — an update matching
+   * no rows returns no error, so without it a blocked write would read as
+   * success and the booking would silently stay on the list.
+   */
+  async function runAction() {
+    if (!pendingAction) return;
+
+    const { booking, kind } = pendingAction;
+    setActingId(booking.id);
+    setActionError(null);
+    setActionNotice(null);
+
+    const payload: Record<string, unknown> =
+      kind === 'complete'
+        ? { status: 'completed', completed_at: new Date().toISOString() }
+        : { status: 'no_show', no_show_at: new Date().toISOString() };
+
+    const { data, error } = await (supabase as any)
+      .from('customer_bookings')
+      .update(payload)
+      .eq('id', booking.id)
+      .select('id');
+
+    setActingId(null);
+
+    if (error) {
+      setActionError(error.message);
+      setPendingAction(null);
+      return;
+    }
+
+    if ((data ?? []).length === 0) {
+      setActionError(
+        'The booking was not updated. It may be blocked by a permissions rule.',
+      );
+      setPendingAction(null);
+      return;
+    }
+
+    setPendingAction(null);
+    setActionNotice(
+      kind === 'complete'
+        ? 'Booking marked as installed.'
+        : 'Booking marked as a no-show.',
+    );
+
+    // Refetch so the finished booking drops off the list.
+    await queryClient.invalidateQueries({
+      queryKey: ['dashboard', 'technician', 'upcoming'],
+    });
+  }
 
   if (isPending) {
     return (
@@ -309,6 +382,21 @@ function TechnicianDashboardView() {
           </CardTitle>
         </CardHeader>
 
+        {actionNotice && (
+          <div className="mx-6 mb-2 rounded border bg-muted/40 p-2 text-sm">
+            {actionNotice}
+          </div>
+        )}
+
+        {actionError && (
+          <div
+            role="alert"
+            className="mx-6 mb-2 rounded border border-destructive/40 bg-destructive/5 p-2 text-sm text-destructive"
+          >
+            {actionError}
+          </div>
+        )}
+
         <CardContent>
           {upcomingPending ? (
             <div className="flex h-24 items-center justify-center">
@@ -322,9 +410,9 @@ function TechnicianDashboardView() {
             <>
               {/* Card list on small screens, where a seven-column table would crush */}
               <div className="space-y-3 lg:hidden">
-                {upcoming.map((b, index) => (
+                {upcoming.map((b) => (
                   <div
-                    key={(b.phone_number ?? 'booking') + index}
+                    key={b.id}
                     className="rounded border p-3"
                   >
                     <p className="font-medium">
@@ -379,6 +467,42 @@ function TechnicianDashboardView() {
                         {b.phone_number}
                       </a>
                     )}
+
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <Button
+                        size="sm"
+                        className="h-10 flex-1"
+                        disabled={actingId === b.id}
+                        onClick={() =>
+                          setPendingAction({ booking: b, kind: 'complete' })
+                        }
+                      >
+                        {actingId === b.id ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Saving...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="mr-2 h-4 w-4" />
+                            Install Complete
+                          </>
+                        )}
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-10 flex-1"
+                        disabled={actingId === b.id}
+                        onClick={() =>
+                          setPendingAction({ booking: b, kind: 'no_show' })
+                        }
+                      >
+                        <UserX className="mr-2 h-4 w-4" />
+                        No Show
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -395,12 +519,13 @@ function TechnicianDashboardView() {
                       <th className="px-3 py-2 font-medium">Unit</th>
                       <th className="px-3 py-2 font-medium">Customer</th>
                       <th className="px-3 py-2 font-medium">Phone</th>
+                      <th className="px-3 py-2 font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {upcoming.map((b, index) => (
+                    {upcoming.map((b) => (
                       <tr
-                        key={(b.phone_number ?? 'booking') + index}
+                        key={b.id}
                         className="border-t"
                       >
                         <td className="px-3 py-2 whitespace-nowrap tabular-nums">
@@ -426,6 +551,34 @@ function TechnicianDashboardView() {
                             '-'
                           )}
                         </td>
+                        <td className="px-3 py-2">
+                          <div className="flex gap-2 whitespace-nowrap">
+                            <Button
+                              size="sm"
+                              disabled={actingId === b.id}
+                              onClick={() =>
+                                setPendingAction({ booking: b, kind: 'complete' })
+                              }
+                            >
+                              {actingId === b.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                'Install Complete'
+                              )}
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={actingId === b.id}
+                              onClick={() =>
+                                setPendingAction({ booking: b, kind: 'no_show' })
+                              }
+                            >
+                              No Show
+                            </Button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -435,6 +588,71 @@ function TechnicianDashboardView() {
           )}
         </CardContent>
       </Card>
+
+      {/* Confirmation for the two booking actions */}
+      {pendingAction && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-action-title"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setPendingAction(null);
+          }}
+          tabIndex={-1}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPendingAction(null);
+          }}
+        >
+          <div className="w-full max-w-sm space-y-4 rounded-lg border bg-background p-5 shadow-xl">
+            <div>
+              <h2 id="confirm-action-title" className="text-lg font-semibold">
+                {pendingAction.kind === 'complete'
+                  ? 'Mark as installed?'
+                  : 'Mark as a no-show?'}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {pendingAction.booking.customer_name || 'This customer'}
+                {pendingAction.booking.unit_number
+                  ? ' \u00b7 Unit ' + pendingAction.booking.unit_number
+                  : ''}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {formatDate(pendingAction.booking.scheduled_date)} \u00b7{' '}
+                {formatTime(pendingAction.booking.local_start)} -{' '}
+                {formatTime(pendingAction.booking.local_end)}
+              </p>
+            </div>
+
+            <p className="text-sm">
+              {pendingAction.kind === 'complete'
+                ? 'This marks the installation complete and removes it from your upcoming bookings.'
+                : 'This records that nobody was on site and removes it from your upcoming bookings.'}
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setPendingAction(null)}>
+                Cancel
+              </Button>
+              <Button
+                disabled={actingId !== null}
+                onClick={() => void runAction()}
+              >
+                {actingId !== null ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : pendingAction.kind === 'complete' ? (
+                  'Mark installed'
+                ) : (
+                  'Mark no-show'
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
