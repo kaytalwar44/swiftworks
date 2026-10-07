@@ -6,12 +6,14 @@ import {
   CheckCircle2,
   HardHat,
   Loader2,
+  LogOut,
   MapPin,
   Phone,
   UserX,
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase/client';
+import { useAuth } from '@/features/auth/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -54,6 +56,8 @@ function formatTimeRange(start: string | null, end: string | null): string {
 }
 
 export default function TechnicianPortal() {
+  const { user, signOut } = useAuth();
+
   const [jobs, setJobs] = useState<PortalJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -200,14 +204,41 @@ export default function TechnicianPortal() {
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4 px-4 py-6">
-      <div className="flex items-center gap-3">
-        <HardHat className="h-6 w-6" />
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">My Jobs</h1>
-          <p className="text-sm text-muted-foreground">
-            Jobs assigned to you
-          </p>
+      {/* Header: brand, then sign out */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <HardHat className="h-6 w-6 text-primary" />
+          <span className="text-lg font-semibold tracking-tight">
+            SwiftWorks
+          </span>
         </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9"
+          onClick={() => void signOut()}
+        >
+          <LogOut className="mr-2 h-4 w-4" />
+          Sign Out
+        </Button>
+      </div>
+
+      {/* Who this portal belongs to */}
+      <div>
+        <p className="text-base font-medium">
+          Welcome, {user?.full_name || 'Technician'}
+        </p>
+        {user?.email && (
+          <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+        )}
+      </div>
+
+      <div className="border-t pt-4">
+        <h1 className="text-xl font-semibold tracking-tight">My Jobs</h1>
+        <p className="text-sm text-muted-foreground">
+          Jobs assigned to you
+        </p>
       </div>
 
       {actionNotice && (
