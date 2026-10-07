@@ -113,64 +113,56 @@ export default function Bookings() {
           ) : bookings.length === 0 ? (
             <p>No bookings found.</p>
           ) : (
-            <div className="space-y-3">
-              {bookings.map((booking) => (
-                <div key={booking.id} className="rounded border p-4">
-                  <div className="font-medium">
-                    {booking.full_name || 'Unknown Customer'}
-                  </div>
-
-                  <div className="text-sm text-muted-foreground">
-                    Ref: {booking.booking_ref || '-'}
-                  </div>
-
-                  <div className="mt-2">
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Job
-                    </p>
-                    <p className="text-sm">
-                      {booking.jobs?.title || booking.jobs?.job_number || '-'}
-                    </p>
-                  </div>
-
-                  <div className="mt-2">
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Date
-                    </p>
-                    <p className="text-sm tabular-nums">
-                      {formatBookingDate(booking.job_slots?.slot_date ?? null)}
-                    </p>
-                  </div>
-
-                  <div className="mt-2">
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Time
-                    </p>
-                    <p className="text-sm tabular-nums">
-                      {formatTimeRange(
-                        booking.job_slots?.local_start ?? null,
-                        booking.job_slots?.local_end ?? null,
-                      )}
-                    </p>
-                  </div>
-
-                  <div className="mt-2 text-sm text-muted-foreground">
-                    Status: {booking.status || '-'}
-                  </div>
-
-                  <div className="text-sm text-muted-foreground">
-                    Email: {booking.email || '-'}
-                  </div>
-
-                  <div className="text-sm text-muted-foreground">
-                    Phone: {booking.phone || '-'}
-                  </div>
-
-                  <div className="text-sm text-muted-foreground">
-                    Unit: {booking.unit_number || '-'}
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-x-auto rounded border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/60">
+                  <tr className="text-left">
+                    <th className="px-3 py-2 font-medium">Name</th>
+                    <th className="px-3 py-2 font-medium">Address</th>
+                    <th className="px-3 py-2 font-medium">Date / Time</th>
+                    <th className="px-3 py-2 font-medium">Email</th>
+                    <th className="px-3 py-2 font-medium">Unit</th>
+                    <th className="px-3 py-2 font-medium">Phone</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bookings.map((booking) => (
+                    <tr key={booking.id} className="border-t align-top">
+                      <td className="px-3 py-2 font-medium">
+                        {booking.full_name || 'Unknown Customer'}
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {booking.jobs?.title || booking.jobs?.job_number || '-'}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap tabular-nums">
+                        {formatBookingDate(booking.job_slots?.slot_date ?? null)}
+                        <span className="ml-1 text-muted-foreground">
+                          {formatTimeRange(
+                            booking.job_slots?.local_start ?? null,
+                            booking.job_slots?.local_end ?? null,
+                          )}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {booking.email || '-'}
+                      </td>
+                      <td className="px-3 py-2">{booking.unit_number || '-'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {booking.phone ? (
+                          <a
+                            href={'tel:' + booking.phone}
+                            className="text-primary underline-offset-2 hover:underline"
+                          >
+                            {booking.phone}
+                          </a>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>
