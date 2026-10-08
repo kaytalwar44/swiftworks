@@ -29,6 +29,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
+/** Today as YYYY-MM-DD in the browser's own time zone, not UTC. */
+function localToday(): string {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return d.getFullYear() + '-' + m + '-' + day;
+}
+
 function formatMoney(value: number, currency = 'AUD') {
   return new Intl.NumberFormat('en-AU', {
     style: 'currency',
@@ -680,6 +688,40 @@ export default function Dashboard() {
     refetchInterval: 60_000,
   });
 
+  // A job stays active while its latest booking date is today or later.
+  // dashboard_summary() carries no booking dates, so this is derived here.
+  const { data: activeJobCount } = useQuery({
+    queryKey: ['dashboard', 'active-jobs'],
+    queryFn: async () => {
+      const { data: rows, error: rowsError } = await (supabase as any)
+        .from('customer_bookings')
+        .select('job_id, scheduled_date, job_slots ( slot_date )')
+        .is('deleted_at', null)
+        .neq('status', 'cancelled');
+
+      if (rowsError) throw rowsError;
+
+      // Latest booking date per job. scheduled_date is null on rows written by
+      // the old booking_create(), so the slot date is the fallback.
+      const latest = new Map<string, string>();
+      for (const r of (rows ?? []) as any[]) {
+        const date: string | null =
+          r.scheduled_date ?? r.job_slots?.slot_date ?? null;
+        if (!r.job_id || !date) continue;
+        const current = latest.get(r.job_id);
+        if (!current || date > current) latest.set(r.job_id, date);
+      }
+
+      const today = localToday();
+      let active = 0;
+      for (const date of latest.values()) {
+        if (date >= today) active += 1;
+      }
+      return active;
+    },
+    refetchInterval: 60_000,
+  });
+
   if (isPending) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -730,8 +772,8 @@ export default function Dashboard() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label="Active jobs"
-                    value={summary.jobs.total - summary.jobs.completed}
-          hint={`${summary.jobs.total} total · ${summary.jobs.completed} complete`}
+          value={activeJobCount ?? '—'}
+          hint="Bookings today or later"
           icon={Building2}
         />
         <KpiCard
