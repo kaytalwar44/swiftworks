@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle2,
+  ClipboardList,
   HardHat,
   Loader2,
   LogOut,
@@ -19,6 +20,7 @@ import { Card, CardContent } from '@/components/ui/card';
 
 type PortalJob = {
   job_id: string;
+  company_id: string;
   job_title: string | null;
   job_number: string | null;
   address: string | null;
@@ -35,6 +37,14 @@ type PortalBooking = {
   phone: string | null;
   status: string | null;
 };
+
+/** Today as YYYY-MM-DD in the browser's own time zone, not UTC. */
+function localIsoDate(): string {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return d.getFullYear() + '-' + m + '-' + day;
+}
 
 /** 2026-10-05 -> Mon 05 Oct */
 function formatDate(value: string | null): string {
@@ -58,6 +68,10 @@ function formatTimeRange(start: string | null, end: string | null): string {
 export default function TechnicianPortal() {
   const { user, signOut } = useAuth();
 
+  // technicians.user_id maps to the auth user. The RPCs resolve it server-side;
+  // this is only used as the technician_id on a new bog_reports row.
+  const technicianId = (user as any)?.technician_id ?? null;
+
   const [jobs, setJobs] = useState<PortalJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -76,10 +90,18 @@ export default function TechnicianPortal() {
     kind: 'complete' | 'rejected';
   } | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
-  /** BOG typed into the confirmation dialog: technicians on site. */
-  const [bogValue, setBogValue] = useState('');
-  /** Inline validation message for the BOG field. */
-  const [bogError, setBogError] = useState<string | null>(null);
+  /** BOG typed into the install confirmation dialog. */
+  const [bogValue] = useState('');
+  /** Inline validation message for that field. */
+  const [, setBogError] = useState<string | null>(null);
+
+  /** BOG Report dialog: which job, the date, and the technician count. */
+  const [bogReportJob, setBogReportJob] = useState<PortalJob | null>(null);
+  const [bogReportDate, setBogReportDate] = useState('');
+  const [bogReportCount, setBogReportCount] = useState('');
+  const [bogReportError, setBogReportError] = useState<string | null>(null);
+  const [bogReportSaving, setBogReportSaving] = useState(false);
+  const [bogReportNotice, setBogReportNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const loadJobs = useCallback(async () => {
@@ -226,6 +248,62 @@ export default function TechnicianPortal() {
     await loadJobs();
   }
 
+  /**
+   * Submits a BOG report for a job. This writes to public.bog_reports and
+   * deliberately does not touch customer_bookings — it is a separate record of
+   * who was on site, not a change to a booking's status.
+   */
+  async function submitBogReport() {
+    if (!bogReportJob) return;
+
+    setBogReportError(null);
+
+    const countTrimmed = bogReportCount.trim();
+    if (countTrimmed === '' || !/^\d+$/.test(countTrimmed)) {
+      setBogReportError('Technicians on site must be 0 or greater.');
+      return;
+    }
+
+    if (!bogReportDate) {
+      setBogReportError('Please choose a report date.');
+      return;
+    }
+
+    setBogReportSaving(true);
+
+    const { data, error: insertError } = await (supabase as any)
+      .from('bog_reports')
+      .insert([
+        {
+          company_id: bogReportJob.company_id,
+          job_id: bogReportJob.job_id,
+          technician_id: technicianId,
+          report_date: bogReportDate,
+          technician_count: Number(countTrimmed),
+        },
+      ])
+      .select('id');
+
+    setBogReportSaving(false);
+
+    if (insertError) {
+      setBogReportError(insertError.message);
+      return;
+    }
+
+    // An insert filtered out by RLS returns no error and no rows.
+    if ((data ?? []).length === 0) {
+      setBogReportError(
+        'The BOG report was not saved. It may be blocked by a permissions rule.',
+      );
+      return;
+    }
+
+    setBogReportJob(null);
+    setBogReportCount('');
+    setBogReportNotice('BOG report submitted.');
+  }
+
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4 px-4 py-6">
       {/* Header: brand, then sign out */}
@@ -264,6 +342,12 @@ export default function TechnicianPortal() {
           Jobs assigned to you
         </p>
       </div>
+
+      {bogReportNotice && (
+        <div className="rounded border bg-muted/40 p-3 text-sm">
+          {bogReportNotice}
+        </div>
+      )}
 
       {actionNotice && (
         <div className="rounded border bg-muted/40 p-3 text-sm">
@@ -348,6 +432,20 @@ export default function TechnicianPortal() {
                     )}
                   </Button>
 
+                  <Button
+                    variant="outline"
+                    className="h-11 w-full"
+                    onClick={() => {
+                      setBogReportJob(job);
+                      setBogReportCount('');
+                      setBogReportError(null);
+                      setBogReportDate(localIsoDate());
+                    }}
+                  >
+                    <ClipboardList className="mr-2 h-4 w-4" />
+                    BOG Report
+                  </Button>
+
                   {isOpen && (
                     <div className="space-y-2 border-t pt-3">
                       {bookingsLoadingId === job.job_id ? (
@@ -409,15 +507,13 @@ export default function TechnicianPortal() {
                                 size="sm"
                                 className="h-10 flex-1"
                                 disabled={actingId === b.booking_id}
-                                onClick={() => {
-                                  setBogValue('');
-                                  setBogError(null);
+                                onClick={() =>
                                   setPendingAction({
                                     booking: b,
                                     jobId: job.job_id,
                                     kind: 'complete',
-                                  });
-                                }}
+                                  })
+                                }
                               >
                                 {actingId === b.booking_id ? (
                                   <>
@@ -437,15 +533,13 @@ export default function TechnicianPortal() {
                                 variant="outline"
                                 className="h-10 flex-1"
                                 disabled={actingId === b.booking_id}
-                                onClick={() => {
-                                  setBogValue('');
-                                  setBogError(null);
+                                onClick={() =>
                                   setPendingAction({
                                     booking: b,
                                     jobId: job.job_id,
                                     kind: 'rejected',
-                                  });
-                                }}
+                                  })
+                                }
                               >
                                 <UserX className="mr-2 h-4 w-4" />
                                 Customer Rejected
@@ -506,45 +600,12 @@ export default function TechnicianPortal() {
                 : 'This records that the customer refused the installation and removes it from this job.'}
             </p>
 
-            {/* BOG is only asked for on an install. */}
-            {pendingAction.kind === 'complete' && (
-              <div className="space-y-1.5">
-                <label htmlFor="bog-count" className="text-sm font-medium">
-                  BOG (Technicians on Site)
-                </label>
-                <input
-                  id="bog-count"
-                  type="number"
-                  min={0}
-                  step={1}
-                  inputMode="numeric"
-                  autoFocus
-                  className="w-full rounded border p-2 text-sm"
-                  placeholder="0"
-                  value={bogValue}
-                  disabled={actingId !== null}
-                  onChange={(e) => {
-                    setBogValue(e.target.value);
-                    setBogError(null);
-                  }}
-                />
-                {bogError && (
-                  <p role="alert" className="text-sm text-destructive">
-                    {bogError}
-                  </p>
-                )}
-              </div>
-            )}
-
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setPendingAction(null)}>
                 Cancel
               </Button>
               <Button
-                disabled={
-                  actingId !== null ||
-                  (pendingAction.kind === 'complete' && bogValue.trim() === '')
-                }
+                disabled={actingId !== null}
                 onClick={() => void runAction()}
               >
                 {actingId !== null ? (
@@ -556,6 +617,107 @@ export default function TechnicianPortal() {
                   'Mark installed'
                 ) : (
                   'Mark rejected'
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BOG Report — writes to bog_reports, never to customer_bookings */}
+      {bogReportJob && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="bog-report-title"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setBogReportJob(null);
+          }}
+          tabIndex={-1}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setBogReportJob(null);
+          }}
+        >
+          <div className="w-full max-w-sm space-y-4 rounded-lg border bg-background p-5 shadow-xl">
+            <div>
+              <h2 id="bog-report-title" className="text-lg font-semibold">
+                BOG Report
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {bogReportJob.job_title || 'Untitled Job'}
+                {bogReportJob.job_number
+                  ? ' - ' + bogReportJob.job_number
+                  : ''}
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="bog-report-date" className="text-sm font-medium">
+                Date
+              </label>
+              <input
+                id="bog-report-date"
+                type="date"
+                className="w-full rounded border p-2 text-sm"
+                value={bogReportDate}
+                disabled={bogReportSaving}
+                onChange={(e) => {
+                  setBogReportDate(e.target.value);
+                  setBogReportError(null);
+                }}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor="bog-report-count"
+                className="text-sm font-medium"
+              >
+                Technicians On Site
+              </label>
+              <input
+                id="bog-report-count"
+                type="number"
+                min={0}
+                step={1}
+                inputMode="numeric"
+                autoFocus
+                className="w-full rounded border p-2 text-sm"
+                placeholder="0"
+                value={bogReportCount}
+                disabled={bogReportSaving}
+                onChange={(e) => {
+                  setBogReportCount(e.target.value);
+                  setBogReportError(null);
+                }}
+              />
+            </div>
+
+            {bogReportError && (
+              <p role="alert" className="text-sm text-destructive">
+                {bogReportError}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setBogReportJob(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={bogReportSaving || bogReportCount.trim() === ''}
+                onClick={() => void submitBogReport()}
+              >
+                {bogReportSaving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Submit BOG'
                 )}
               </Button>
             </div>
