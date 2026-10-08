@@ -20,7 +20,6 @@ import { Card, CardContent } from '@/components/ui/card';
 
 type PortalJob = {
   job_id: string;
-  company_id: string;
   job_title: string | null;
   job_number: string | null;
   address: string | null;
@@ -66,7 +65,12 @@ function formatTimeRange(start: string | null, end: string | null): string {
 }
 
 export default function TechnicianPortal() {
-  const { user, signOut } = useAuth();
+  const { user, company, signOut } = useAuth();
+
+  // company_id for the BOG insert, taken from the auth context exactly as Jobs
+  // and Bookings do. technician_portal_jobs() does not return it, so reading it
+  // off the job row would send undefined and fail the NOT NULL constraint.
+  const companyId = company?.id ?? null;
 
   // technicians.user_id maps to the auth user. The RPCs resolve it server-side;
   // this is only used as the technician_id on a new bog_reports row.
@@ -269,13 +273,20 @@ export default function TechnicianPortal() {
       return;
     }
 
+    if (!companyId) {
+      setBogReportError(
+        'Could not determine your company. Try reloading the page.',
+      );
+      return;
+    }
+
     setBogReportSaving(true);
 
     const { data, error: insertError } = await (supabase as any)
       .from('bog_reports')
       .insert([
         {
-          company_id: bogReportJob.company_id,
+          company_id: companyId,
           job_id: bogReportJob.job_id,
           technician_id: technicianId,
           report_date: bogReportDate,
