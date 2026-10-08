@@ -76,6 +76,10 @@ export default function TechnicianPortal() {
     kind: 'complete' | 'rejected';
   } | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  /** BOG typed into the confirmation dialog: technicians on site. */
+  const [bogValue, setBogValue] = useState('');
+  /** Inline validation message for the BOG field. */
+  const [bogError, setBogError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const loadJobs = useCallback(async () => {
@@ -158,9 +162,29 @@ export default function TechnicianPortal() {
     setActionError(null);
     setActionNotice(null);
 
+    // BOG is required for an install. Validated here as well as in the dialog
+    // so the value cannot slip through if the dialog is ever bypassed.
+    let bog: number | null = null;
+    if (kind === 'complete') {
+      const trimmed = bogValue.trim();
+      if (trimmed === '' || !/^\d+$/.test(trimmed)) {
+        setBogError('BOG must be 0 or greater.');
+        return;
+      }
+      bog = Number(trimmed);
+      if (bog < 0) {
+        setBogError('BOG must be 0 or greater.');
+        return;
+      }
+    }
+
     const payload: Record<string, unknown> =
       kind === 'complete'
-        ? { status: 'completed', completed_at: new Date().toISOString() }
+        ? {
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+            bog_count: bog,
+          }
         : { status: 'no_show' };
 
     const { data, error: updError } = await (supabase as any)
@@ -385,13 +409,15 @@ export default function TechnicianPortal() {
                                 size="sm"
                                 className="h-10 flex-1"
                                 disabled={actingId === b.booking_id}
-                                onClick={() =>
+                                onClick={() => {
+                                  setBogValue('');
+                                  setBogError(null);
                                   setPendingAction({
                                     booking: b,
                                     jobId: job.job_id,
                                     kind: 'complete',
-                                  })
-                                }
+                                  });
+                                }}
                               >
                                 {actingId === b.booking_id ? (
                                   <>
@@ -411,13 +437,15 @@ export default function TechnicianPortal() {
                                 variant="outline"
                                 className="h-10 flex-1"
                                 disabled={actingId === b.booking_id}
-                                onClick={() =>
+                                onClick={() => {
+                                  setBogValue('');
+                                  setBogError(null);
                                   setPendingAction({
                                     booking: b,
                                     jobId: job.job_id,
                                     kind: 'rejected',
-                                  })
-                                }
+                                  });
+                                }}
                               >
                                 <UserX className="mr-2 h-4 w-4" />
                                 Customer Rejected
@@ -478,12 +506,45 @@ export default function TechnicianPortal() {
                 : 'This records that the customer refused the installation and removes it from this job.'}
             </p>
 
+            {/* BOG is only asked for on an install. */}
+            {pendingAction.kind === 'complete' && (
+              <div className="space-y-1.5">
+                <label htmlFor="bog-count" className="text-sm font-medium">
+                  BOG (Technicians on Site)
+                </label>
+                <input
+                  id="bog-count"
+                  type="number"
+                  min={0}
+                  step={1}
+                  inputMode="numeric"
+                  autoFocus
+                  className="w-full rounded border p-2 text-sm"
+                  placeholder="0"
+                  value={bogValue}
+                  disabled={actingId !== null}
+                  onChange={(e) => {
+                    setBogValue(e.target.value);
+                    setBogError(null);
+                  }}
+                />
+                {bogError && (
+                  <p role="alert" className="text-sm text-destructive">
+                    {bogError}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setPendingAction(null)}>
                 Cancel
               </Button>
               <Button
-                disabled={actingId !== null}
+                disabled={
+                  actingId !== null ||
+                  (pendingAction.kind === 'complete' && bogValue.trim() === '')
+                }
                 onClick={() => void runAction()}
               >
                 {actingId !== null ? (
