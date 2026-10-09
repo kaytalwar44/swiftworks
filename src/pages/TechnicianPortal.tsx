@@ -77,37 +77,46 @@ export default function TechnicianPortal() {
    */
   const [technicianId, setTechnicianId] = useState<string | null>(null);
 
+  // Resolved through a SECURITY DEFINER RPC rather than a direct select on
+  // public.technicians. The table's RLS does not expose a technician's own row
+  // to them, so a client query returns zero rows and .maybeSingle() reports
+  // null — indistinguishable from "no technician record". The RPC runs as its
+  // owner and answers with app.current_technician_id(), the same function
+  // technician_portal_jobs() already uses.
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
-      if (!user?.id) {
-        if (!cancelled) setTechnicianId(null);
-        return;
-      }
-
-      const { data, error: techError } = await (supabase as any)
-        .from('technicians')
-        .select('id')
-        .eq('user_id', user.id)
-        .is('deleted_at', null)
-        .maybeSingle();
+      const { data, error: rpcError } = await (supabase as any).rpc(
+        'current_technician',
+      );
 
       if (cancelled) return;
 
-      if (techError) {
-        console.error('technician lookup failed', techError);
+      if (rpcError) {
+        console.error('current_technician failed', rpcError);
         setTechnicianId(null);
         return;
       }
 
-      setTechnicianId((data as { id: string } | null)?.id ?? null);
+      // A scalar-returning RPC arrives unwrapped; a table-returning one arrives
+      // as an array. Handle both so the return shape can change without a
+      // client edit.
+      const rows = Array.isArray(data) ? data : [data];
+      const first = rows[0];
+      const id =
+        typeof first === 'string'
+          ? first
+          : ((first as { technician_id?: string | null } | null)
+              ?.technician_id ?? null);
+
+      setTechnicianId(id);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [user?.id]);
+  }, []);
 
   // company_id for the BOG insert, taken from the auth context exactly as Jobs
   // and Bookings do. technician_portal_jobs() does not return it, so reading it
