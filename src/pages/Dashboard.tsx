@@ -15,7 +15,7 @@ import {
   MapPin,
   Phone,
   Plus,
-  QrCode,
+  UsersRound,
   Star,
   TrendingUp,
   UserX,
@@ -747,6 +747,33 @@ export default function Dashboard() {
     refetchInterval: 60_000,
   });
 
+  // BOG for today: how many jobs were reported on, and the total number of
+  // technicians on site across those reports.
+  const { data: bogStats } = useQuery({
+    queryKey: ['dashboard', 'bog-today'],
+    queryFn: async () => {
+      const { data: rows, error: rowsError } = await (supabase as any)
+        .from('bog_reports')
+        .select('job_id, technician_count')
+        .eq('report_date', localToday());
+
+      if (rowsError) throw rowsError;
+
+      // A Set is what makes the large number a count(distinct job_id): two
+      // reports against the same job count once.
+      const jobs = new Set<string>();
+      let technicians = 0;
+
+      for (const r of (rows ?? []) as any[]) {
+        if (r.job_id) jobs.add(r.job_id);
+        technicians += Number(r.technician_count ?? 0);
+      }
+
+      return { jobs: jobs.size, technicians };
+    },
+    refetchInterval: 60_000,
+  });
+
   if (isPending) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -808,12 +835,12 @@ export default function Dashboard() {
           icon={CalendarCheck}
         />
 
-<KpiCard
-  label="QR conversion"
-  value={`${summary.qr.conversion_rate}%`}
-  hint={`${summary.qr.scans} scans · ${summary.qr.active} active codes`}
-  icon={QrCode}
-/>
+        <KpiCard
+          label="BOG"
+          value={bogStats?.jobs ?? 0}
+          hint={`${bogStats?.technicians ?? 0} technicians on site`}
+          icon={UsersRound}
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
