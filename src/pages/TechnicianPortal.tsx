@@ -67,18 +67,59 @@ function formatTimeRange(start: string | null, end: string | null): string {
 export default function TechnicianPortal() {
   const { user, company, signOut } = useAuth();
 
+  /**
+   * The technicians row for the signed-in user.
+   *
+   * users.id and technicians.id are different values: the technician id lives
+   * on public.technicians and is matched by user_id. app.current_technician_id()
+   * does this server-side, but the BOG insert is a client write, so it is
+   * resolved here once on mount.
+   */
+  const [technicianId, setTechnicianId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      if (!user?.id) {
+        if (!cancelled) setTechnicianId(null);
+        return;
+      }
+
+      const { data, error: techError } = await (supabase as any)
+        .from('technicians')
+        .select('id')
+        .eq('user_id', user.id)
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (techError) {
+        console.error('technician lookup failed', techError);
+        setTechnicianId(null);
+        return;
+      }
+
+      setTechnicianId((data as { id: string } | null)?.id ?? null);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
   // company_id for the BOG insert, taken from the auth context exactly as Jobs
   // and Bookings do. technician_portal_jobs() does not return it, so reading it
   // off the job row would send undefined and fail the NOT NULL constraint.
   const companyId = company?.id ?? null;
 
-  // technicians.user_id maps to the auth user. The RPCs resolve it server-side;
-  // this is only used as the technician_id on a new bog_reports row.
-  const technicianId = (user as any)?.technician_id ?? null;
+
 
   const [jobs, setJobs] = useState<PortalJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [bogError, setBogError] = useState<string | null>(null);
 
   const [openJobId, setOpenJobId] = useState<string | null>(null);
   const [bookings, setBookings] = useState<Record<string, PortalBooking[]>>({});
@@ -95,9 +136,8 @@ export default function TechnicianPortal() {
   } | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   /** BOG typed into the install confirmation dialog. */
-  const [bogValue] = useState('');
+  const [bogValue, setBogValue] = useState('');
   /** Inline validation message for that field. */
-  const [, setBogError] = useState<string | null>(null);
 
   /** BOG Report dialog: which job, the date, and the technician count. */
   const [bogReportJob, setBogReportJob] = useState<PortalJob | null>(null);
@@ -276,6 +316,13 @@ export default function TechnicianPortal() {
     if (!companyId) {
       setBogReportError(
         'Could not determine your company. Try reloading the page.',
+      );
+      return;
+    }
+
+    if (!technicianId) {
+      setBogReportError(
+        'No technician record is linked to your account. Ask an administrator to link it.',
       );
       return;
     }
@@ -611,12 +658,45 @@ export default function TechnicianPortal() {
                 : 'This records that the customer refused the installation and removes it from this job.'}
             </p>
 
+            {/* BOG is only asked for on an install. */}
+            {pendingAction.kind === 'complete' && (
+              <div className="space-y-1.5">
+                <label htmlFor="bog-count" className="text-sm font-medium">
+                  BOG (Technicians on Site)
+                </label>
+                <input
+                  id="bog-count"
+                  type="number"
+                  min={0}
+                  step={1}
+                  inputMode="numeric"
+                  autoFocus
+                  className="w-full rounded border p-2 text-sm"
+                  placeholder="0"
+                  value={bogValue}
+                  disabled={actingId !== null}
+                  onChange={(e) => {
+                    setBogValue(e.target.value);
+                    setBogError(null);
+                  }}
+                />
+                {bogError && (
+                  <p role="alert" className="text-sm text-destructive">
+                    {bogError}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setPendingAction(null)}>
                 Cancel
               </Button>
               <Button
-                disabled={actingId !== null}
+                disabled={
+                  actingId !== null ||
+                  (pendingAction.kind === 'complete' && bogValue.trim() === '')
+                }
                 onClick={() => void runAction()}
               >
                 {actingId !== null ? (
@@ -719,7 +799,11 @@ export default function TechnicianPortal() {
                 Cancel
               </Button>
               <Button
-                disabled={bogReportSaving || bogReportCount.trim() === ''}
+                disabled={
+                  bogReportSaving ||
+                  bogReportCount.trim() === '' ||
+                  !technicianId
+                }
                 onClick={() => void submitBogReport()}
               >
                 {bogReportSaving ? (
