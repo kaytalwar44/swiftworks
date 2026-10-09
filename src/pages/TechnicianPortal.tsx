@@ -10,7 +10,6 @@ import {
   LogOut,
   MapPin,
   Phone,
-  UserX,
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase/client';
@@ -36,6 +35,20 @@ type PortalBooking = {
   phone: string | null;
   status: string | null;
 };
+
+/** Booking outcomes a technician can record, mapped to customer_bookings.status. */
+const OUTCOMES = [
+  { value: 'completed', label: 'Install Completed' },
+  { value: 'customer_refused', label: 'Customer Refused' },
+  { value: 'no_show', label: 'Customer Not At Home' },
+  { value: 'rescheduled', label: 'Rescheduled - Customer Requested' },
+] as const;
+
+type OutcomeValue = (typeof OUTCOMES)[number]['value'];
+
+function outcomeLabel(value: OutcomeValue): string {
+  return OUTCOMES.find((o) => o.value === value)?.label ?? value;
+}
 
 /** Today as YYYY-MM-DD in the browser's own time zone, not UTC. */
 function localIsoDate(): string {
@@ -128,7 +141,6 @@ export default function TechnicianPortal() {
   const [jobs, setJobs] = useState<PortalJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [bogError, setBogError] = useState<string | null>(null);
 
   const [openJobId, setOpenJobId] = useState<string | null>(null);
   const [bookings, setBookings] = useState<Record<string, PortalBooking[]>>({});
@@ -141,12 +153,11 @@ export default function TechnicianPortal() {
   const [pendingAction, setPendingAction] = useState<{
     booking: PortalBooking;
     jobId: string;
-    kind: 'complete' | 'rejected';
+    outcome: OutcomeValue;
   } | null>(null);
+  /** Outcome picked in each booking's dropdown, keyed by booking id. */
+  const [outcomeById, setOutcomeById] = useState<Record<string, OutcomeValue | ''>>({});
   const [actionNotice, setActionNotice] = useState<string | null>(null);
-  /** BOG typed into the install confirmation dialog. */
-  const [bogValue, setBogValue] = useState('');
-  /** Inline validation message for that field. */
 
   /** BOG Report dialog: which job, the date, and the technician count. */
   const [bogReportJob, setBogReportJob] = useState<PortalJob | null>(null);
@@ -232,35 +243,16 @@ export default function TechnicianPortal() {
   async function runAction() {
     if (!pendingAction) return;
 
-    const { booking, jobId, kind } = pendingAction;
+    const { booking, jobId, outcome } = pendingAction;
     setActingId(booking.booking_id);
     setActionError(null);
     setActionNotice(null);
 
-    // BOG is required for an install. Validated here as well as in the dialog
-    // so the value cannot slip through if the dialog is ever bypassed.
-    let bog: number | null = null;
-    if (kind === 'complete') {
-      const trimmed = bogValue.trim();
-      if (trimmed === '' || !/^\d+$/.test(trimmed)) {
-        setBogError('BOG must be 0 or greater.');
-        return;
-      }
-      bog = Number(trimmed);
-      if (bog < 0) {
-        setBogError('BOG must be 0 or greater.');
-        return;
-      }
-    }
-
+    // Outcome only. BOG is recorded separately through the BOG Report dialog.
     const payload: Record<string, unknown> =
-      kind === 'complete'
-        ? {
-            status: 'completed',
-            completed_at: new Date().toISOString(),
-            bog_count: bog,
-          }
-        : { status: 'no_show' };
+      outcome === 'completed'
+        ? { status: outcome, completed_at: new Date().toISOString() }
+        : { status: outcome };
 
     const { data, error: updError } = await (supabase as any)
       .from('customer_bookings')
@@ -286,9 +278,7 @@ export default function TechnicianPortal() {
 
     setPendingAction(null);
     setActionNotice(
-      kind === 'complete'
-        ? 'Booking marked as installed.'
-        : 'Booking marked as rejected.',
+      'Outcome saved: ' + outcomeLabel(outcome) + '.',
     );
 
     // Drop this job's cached bookings so the row disappears at once, then
@@ -570,17 +560,40 @@ export default function TechnicianPortal() {
                             )}
 
                             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                              <label htmlFor={'outcome-' + b.booking_id} className="sr-only">
+                                Outcome
+                              </label>
+                              <select
+                                id={'outcome-' + b.booking_id}
+                                className="h-10 flex-1 rounded-md border bg-background px-3 text-sm"
+                                value={outcomeById[b.booking_id] ?? ''}
+                                disabled={actingId === b.booking_id}
+                                onChange={(e) =>
+                                  setOutcomeById((prev) => ({
+                                    ...prev,
+                                    [b.booking_id]: e.target.value as OutcomeValue | '',
+                                  }))
+                                }
+                              >
+                                <option value="">Select outcome…</option>
+                                {OUTCOMES.map((o) => (
+                                  <option key={o.value} value={o.value}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+
                               <Button
                                 size="sm"
-                                className="h-10 flex-1"
-                                disabled={actingId === b.booking_id}
-                                onClick={() =>
-                                  setPendingAction({
-                                    booking: b,
-                                    jobId: job.job_id,
-                                    kind: 'complete',
-                                  })
+                                className="h-10 sm:w-36"
+                                disabled={
+                                  actingId === b.booking_id || !outcomeById[b.booking_id]
                                 }
+                                onClick={() => {
+                                  const outcome = outcomeById[b.booking_id];
+                                  if (!outcome) return;
+                                  setPendingAction({ booking: b, jobId: job.job_id, outcome });
+                                }}
                               >
                                 {actingId === b.booking_id ? (
                                   <>
@@ -590,26 +603,9 @@ export default function TechnicianPortal() {
                                 ) : (
                                   <>
                                     <CheckCircle2 className="mr-2 h-4 w-4" />
-                                    Install Complete
+                                    Save Outcome
                                   </>
                                 )}
-                              </Button>
-
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-10 flex-1"
-                                disabled={actingId === b.booking_id}
-                                onClick={() =>
-                                  setPendingAction({
-                                    booking: b,
-                                    jobId: job.job_id,
-                                    kind: 'rejected',
-                                  })
-                                }
-                              >
-                                <UserX className="mr-2 h-4 w-4" />
-                                Customer Rejected
                               </Button>
                             </div>
                           </div>
@@ -642,9 +638,7 @@ export default function TechnicianPortal() {
           <div className="w-full max-w-sm space-y-4 rounded-lg border bg-background p-5 shadow-xl">
             <div>
               <h2 id="portal-confirm-title" className="text-lg font-semibold">
-                {pendingAction.kind === 'complete'
-                  ? 'Mark as installed?'
-                  : 'Mark as customer rejected?'}
+                Save outcome: {outcomeLabel(pendingAction.outcome)}?
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 {pendingAction.booking.customer_name || 'This customer'}
@@ -662,50 +656,15 @@ export default function TechnicianPortal() {
             </div>
 
             <p className="text-sm">
-              {pendingAction.kind === 'complete'
-                ? 'This marks the installation complete and removes it from this job.'
-                : 'This records that the customer refused the installation and removes it from this job.'}
+              This records the outcome for this booking and removes it from this job.
             </p>
-
-            {/* BOG is only asked for on an install. */}
-            {pendingAction.kind === 'complete' && (
-              <div className="space-y-1.5">
-                <label htmlFor="bog-count" className="text-sm font-medium">
-                  BOG (Technicians on Site)
-                </label>
-                <input
-                  id="bog-count"
-                  type="number"
-                  min={0}
-                  step={1}
-                  inputMode="numeric"
-                  autoFocus
-                  className="w-full rounded border p-2 text-sm"
-                  placeholder="0"
-                  value={bogValue}
-                  disabled={actingId !== null}
-                  onChange={(e) => {
-                    setBogValue(e.target.value);
-                    setBogError(null);
-                  }}
-                />
-                {bogError && (
-                  <p role="alert" className="text-sm text-destructive">
-                    {bogError}
-                  </p>
-                )}
-              </div>
-            )}
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setPendingAction(null)}>
                 Cancel
               </Button>
               <Button
-                disabled={
-                  actingId !== null ||
-                  (pendingAction.kind === 'complete' && bogValue.trim() === '')
-                }
+                disabled={actingId !== null}
                 onClick={() => void runAction()}
               >
                 {actingId !== null ? (
@@ -713,10 +672,8 @@ export default function TechnicianPortal() {
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Saving...
                   </>
-                ) : pendingAction.kind === 'complete' ? (
-                  'Mark installed'
                 ) : (
-                  'Mark rejected'
+                  'Save Outcome'
                 )}
               </Button>
             </div>
