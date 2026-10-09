@@ -798,12 +798,12 @@ export default function TechnicianPortal() {
               >
                 Cancel
               </Button>
-              <Button
-                disabled={
-                  bogReportSaving ||
-                  bogReportCount.trim() === '' ||
-                  !technicianId
-                }
+                            <Button
+                // technicianId is deliberately not part of this gate. When the
+                // signed-in user has no technicians row linked, disabling the
+                // button leaves no way to find out why; the guard inside
+                // submitBogReport() explains it on click instead.
+                disabled={bogReportSaving || bogReportCount.trim() === ''}
                 onClick={() => void submitBogReport()}
               >
                 {bogReportSaving ? (
@@ -815,6 +815,7 @@ export default function TechnicianPortal() {
                   'Submit BOG'
                 )}
               </Button>
+
             </div>
           </div>
         </div>
