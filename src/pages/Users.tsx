@@ -194,52 +194,49 @@ export default function Users() {
 
     setSaving(true);
 
+    // The role id is read from public.roles at load time rather than pasted in
+    // as a literal: the same uuid is not valid across tenants, and a hard-coded
+    // one silently grants the wrong role in a second company.
+    const roleRow = roles.find((r) => r.code === draft.role);
+    if (!roleRow) {
+      setSaving(false);
+      setSaveError('That role does not exist in this company.');
+      return;
+    }
+
     const { data, error: inviteErr } = await (supabase as any).rpc(
-  'invite_user',
-  {
-    p_email: email.trim().toLowerCase(),
-    p_role_id: '5f2749c9-b1ce-4a07-8fd4-a0b935c8ba21',
-    p_partner_id: null,
-    p_member_type: 'staff',
-    p_expires_days: 14,
-  },
-);
+      'invite_user',
+      {
+        p_email: email,
+        p_role_id: roleRow.id,
+        p_partner_id: null,
+        p_member_type:
+          draft.role === 'company_admin' ? 'staff' : 'contractor',
+        p_expires_days: 14,
+      },
+    );
 
     if (inviteErr) {
-      console.log(inviteErr);
+      console.error('invite_user failed', inviteErr);
       setSaving(false);
       setSaveError(inviteErr.message);
       return;
     }
 
-    // An invitation that returns no row is one that did not create a user.
-    const invited = Array.isArray(data) ? data[0] : data;
-    if (invited?.email && invited?.token) {
-  const { error: emailError } = await supabase.functions.invoke(
-    'send-invitation-email',
-    {
-      body: {
-        email: invited.email,
-        token: invited.token,
-      },
-    },
-  );
+    // invite_user() returns:
+    //   invitation_id, token, email, role_id, expires_at, is_resend
+    const invited = (Array.isArray(data) ? data[0] : data) as {
+      invitation_id?: string;
+      token?: string;
+      email?: string;
+      role_id?: string;
+      expires_at?: string | null;
+      is_resend?: boolean;
+    } | null;
 
-  if (emailError) {
-    console.error('Invitation email failed', emailError);
-  }
-}
-    const invitedId =
-  typeof invited === 'string'
-    ? invited
-    : (
-        (invited as any)?.invitation_id ??
-        (invited as any)?.user_id ??
-        (invited as any)?.id ??
-        null
-      );
-
-    if (!invited) {
+    // Without a token there is no link to put in the email, so stop here
+    // rather than invite someone to a dead page.
+    if (!invited?.token) {
       setSaving(false);
       setSaveError(
         'The invitation was not created. It may be blocked by a permissions rule.',
@@ -247,26 +244,46 @@ export default function Users() {
       return;
     }
 
-    // Assign the role explicitly too, so the page works even if the RPC only
-    // creates the user. A duplicate assignment is caught and treated as fine.
-    const role = roles.find((r) => r.code === draft.role);
-    if (role) {
-      const { error: assignErr } = await (supabase as any)
-        .from('user_roles')
-        .upsert(
-          { user_id: invitedId, role_id: role.id },
-          { onConflict: 'user_id,role_id' },
-        );
+    /**
+     * Delivery is a separate hop from the database row: invite_user() writes
+     * user_invitations, the Edge Function sends the mail. If delivery fails the
+     * user and the token both still exist, so the row's Send Invite button is
+     * the retry rather than a rollback.
+     */
+    const { error: mailErr } = await supabase.functions.invoke(
+      'send-invitation',
+      {
+        body: {
+          email: invited.email ?? email,
+          token: invited.token,
+          role: draft.role,
+          company_name: company?.legal_name ?? 'SwiftWorks',
+          expires_at: invited.expires_at ?? null,
+        },
+      },
+    );
 
-      if (assignErr) {
-        console.warn('user_roles assign failed', assignErr);
-      }
+    if (mailErr) {
+      setSaving(false);
+      setSaveError(
+        'The user was created, but the invitation email did not send: ' +
+          mailErr.message,
+      );
+      await load();
+      return;
     }
+
+    // No user_roles write here: invite_user() takes p_role_id and makes the
+    // assignment itself, and invited.role_id reports what it used.
 
     setSaving(false);
     setDialogOpen(false);
     setNotice(
-      'Invite sent to ' + email + ' as ' + roleLabel(draft.role) + '.',
+      (invited.is_resend ? 'Invite re-sent to ' : 'Invite sent to ') +
+        (invited.email ?? email) +
+        ' as ' +
+        roleLabel(draft.role) +
+        '.',
     );
     await load();
   }
@@ -278,22 +295,64 @@ export default function Users() {
     setNotice(null);
     setError(null);
 
-    const { error: inviteErr } = await (supabase as any).rpc('invite_user', {
-  p_email: u.email.trim().toLowerCase(),
-  p_role_id: '5f2749c9-b1ce-4a07-8fd4-a0b935c8ba21',
-  p_partner_id: null,
-  p_member_type: 'staff',
-  p_expires_days: 14,
-});
+    const roleRow = roles.find((r) => r.code === u.role_code);
+    if (!roleRow) {
+      setBusyId(null);
+      setError('That user has no role this page can assign.');
+      return;
+    }
 
-    setBusyId(null);
+    const { data, error: inviteErr } = await (supabase as any).rpc(
+      'invite_user',
+      {
+        p_email: u.email,
+        p_role_id: roleRow.id,
+        p_partner_id: null,
+        p_member_type:
+          u.role_code === 'company_admin' ? 'staff' : 'contractor',
+        p_expires_days: 14,
+      },
+    );
 
     if (inviteErr) {
+      setBusyId(null);
       setError(inviteErr.message);
       return;
     }
 
-    setNotice('Invite re-sent to ' + u.email + '.');
+    const invited = (Array.isArray(data) ? data[0] : data) as {
+      token?: string;
+      email?: string;
+      expires_at?: string | null;
+    } | null;
+
+    if (!invited?.token) {
+      setBusyId(null);
+      setError('No invitation token was returned, so no email was sent.');
+      return;
+    }
+
+    const { error: mailErr } = await supabase.functions.invoke(
+      'send-invitation',
+      {
+        body: {
+          email: invited.email ?? u.email,
+          token: invited.token,
+          role: u.role_code ?? 'technician',
+          company_name: company?.legal_name ?? 'SwiftWorks',
+          expires_at: invited.expires_at ?? null,
+        },
+      },
+    );
+
+    setBusyId(null);
+
+    if (mailErr) {
+      setError('The invitation email did not send: ' + mailErr.message);
+      return;
+    }
+
+    setNotice('Invite re-sent to ' + (invited.email ?? u.email) + '.');
   }
 
   /** Swaps a user's role between the two this screen manages. */
