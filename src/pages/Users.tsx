@@ -259,10 +259,12 @@ export default function Users() {
     setError(null);
 
     const { error: inviteErr } = await (supabase as any).rpc('invite_user', {
-      p_email: u.email,
-      p_full_name: u.full_name,
-      p_role_code: u.role_code ?? 'technician',
-    });
+  p_email: u.email.trim().toLowerCase(),
+  p_role_id: '5f2749c9-b1ce-4a07-8fd4-a0b935c8ba21',
+  p_partner_id: null,
+  p_member_type: 'staff',
+  p_expires_days: 14,
+});
 
     setBusyId(null);
 
