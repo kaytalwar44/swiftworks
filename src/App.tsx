@@ -21,6 +21,7 @@ const TechniciansPage = lazy(() => import('@/pages/Technicians'));
 const RateCardsPage = lazy(() => import('@/pages/RateCards'));
 const InvoicesPage = lazy(() => import('@/pages/Invoices'));
 const TeamPage = lazy(() => import('@/pages/Team'));
+const UsersPage = lazy(() => import('@/pages/Users'));
 const SettingsPage = lazy(() => import('@/pages/Settings'));
 
 export default function App() {
@@ -69,7 +70,9 @@ export default function App() {
             <Route path="/rates" element={<RateCardsPage />} />
             <Route path="/invoices" element={<InvoicesPage />} />
 
+            {/* Administration */}
             <Route path="/team" element={<TeamPage />} />
+            <Route path="/users" element={<UsersPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
 
