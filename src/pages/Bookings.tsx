@@ -12,6 +12,7 @@ type Booking = {
   phone: string | null;
   email: string | null;
   unit_number: string | null;
+  equipment_serial: string | null;
   slot_id: string | null;
   job_id: string | null;
   job_slots: {
@@ -59,7 +60,7 @@ export default function Bookings() {
       const { data, error } = await (supabase as any)
         .from('customer_bookings')
         .select(
-          'id, booking_ref, status, full_name, phone, email, unit_number, slot_id, job_id, ' +
+          'id, booking_ref, status, full_name, phone, email, unit_number, equipment_serial, slot_id, job_id, ' +
             'job_slots ( slot_date, local_start, local_end ), ' +
             'jobs ( title, job_number )',
         )
@@ -145,6 +146,7 @@ export default function Bookings() {
                     <th className="px-3 py-2 font-medium">Date / Time</th>
                     <th className="px-3 py-2 font-medium">Email</th>
                     <th className="px-3 py-2 font-medium">Unit</th>
+                    <th className="px-3 py-2 font-medium">Equipment Serial</th>
                     <th className="px-3 py-2 font-medium">Phone</th>
                   </tr>
                 </thead>
@@ -170,6 +172,9 @@ export default function Bookings() {
                         {booking.email || '-'}
                       </td>
                       <td className="px-3 py-2">{booking.unit_number || '-'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-muted-foreground">
+                        {booking.equipment_serial || '-'}
+                      </td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         {booking.phone ? (
                           <a
