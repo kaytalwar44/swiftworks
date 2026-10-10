@@ -53,6 +53,47 @@ function formatTimeRange(start: string | null, end: string | null): string {
   return formatShortTime(start) || formatShortTime(end);
 }
 
+/**
+ * Colours per booking status. Deliberately a plain map rather than a Badge
+ * variant: the values come from the database, and an unknown one has to fall
+ * through to a neutral chip rather than render nothing.
+ */
+const STATUS_STYLES: Record<
+  string,
+  { label: string; className: string }
+> = {
+  confirmed: {
+    label: 'Confirmed',
+    className: 'bg-blue-100 text-blue-800 ring-blue-600/20',
+  },
+  completed: {
+    label: 'Completed',
+    className: 'bg-emerald-100 text-emerald-800 ring-emerald-600/20',
+  },
+  customer_refused: {
+    label: 'Customer Refused',
+    className: 'bg-red-100 text-red-800 ring-red-600/20',
+  },
+  no_show: {
+    label: 'Customer Not At Home',
+    className: 'bg-amber-100 text-amber-900 ring-amber-600/20',
+  },
+  rescheduled: {
+    label: 'Rescheduled',
+    className: 'bg-violet-100 text-violet-800 ring-violet-600/20',
+  },
+};
+
+function statusStyle(status: string | null) {
+  const key = String(status ?? '').trim();
+  return (
+    STATUS_STYLES[key] ?? {
+      label: key === '' ? '-' : key.replace(/_/g, ' '),
+      className: 'bg-muted text-muted-foreground ring-border',
+    }
+  );
+}
+
 export default function Bookings() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -197,8 +238,20 @@ export default function Bookings() {
                       <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-muted-foreground">
                         {booking.equipment_serial || '-'}
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                        {booking.status || '-'}
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {(() => {
+                          const status = statusStyle(booking.status);
+                          return (
+                            <span
+                              className={
+                                'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ' +
+                                status.className
+                              }
+                            >
+                              {status.label}
+                            </span>
+                          );
+                        })()}
                       </td>
                     </tr>
                   ))}
