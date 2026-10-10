@@ -195,14 +195,15 @@ export default function Users() {
     setSaving(true);
 
     const { data, error: inviteErr } = await (supabase as any).rpc(
-      'invite_user',
-      {
-        p_email: email,
-        p_full_name: fullName,
-        p_phone: draft.phone.trim() || null,
-        p_role_code: draft.role,
-      },
-    );
+  'invite_user',
+  {
+    p_email: email.trim().toLowerCase(),
+    p_role_id: '5f2749c9-b1ce-4a07-8fd4-a0b935c8ba21',
+    p_partner_id: null,
+    p_member_type: 'staff',
+    p_expires_days: 14,
+  },
+);
 
     if (inviteErr) {
       setSaving(false);
