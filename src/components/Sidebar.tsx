@@ -9,6 +9,7 @@ import {
   Receipt,
   Settings,
   ShieldCheck,
+  UserCog,
 } from 'lucide-react';
 
 import { useAuth } from '@/features/auth/providers/auth-provider';
@@ -109,6 +110,13 @@ const SECTIONS: NavSection[] = [
         to: '/team',
         label: 'Team',
         icon: ShieldCheck,
+        permission: 'users.manage',
+        operatorOnly: true,
+      },
+      {
+        to: '/users',
+        label: 'Users',
+        icon: UserCog,
         permission: 'users.manage',
         operatorOnly: true,
       },
