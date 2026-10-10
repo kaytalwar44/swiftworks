@@ -206,6 +206,7 @@ export default function Users() {
 );
 
     if (inviteErr) {
+      console.log(inviteErr);
       setSaving(false);
       setSaveError(inviteErr.message);
       return;
