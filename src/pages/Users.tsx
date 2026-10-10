@@ -13,7 +13,7 @@ type ManagedUser = {
   email: string | null;
   phone: string | null;
   company_id: string | null;
-  is_active: boolean | null;
+  status: string | null;
   role_code: string | null;
   role_name: string | null;
 };
@@ -58,6 +58,11 @@ function roleLabel(code: string | null): string {
   return ROLES.find((r) => r.value === code)?.label ?? 'No role';
 }
 
+/** Only 'active' counts as enabled; anything else is treated as blocked. */
+function isDisabled(status: string | null): boolean {
+  return String(status ?? '').toLowerCase() !== 'active';
+}
+
 export default function Users() {
   const { company } = useAuth();
 
@@ -80,7 +85,7 @@ export default function Users() {
     // users_self_read plus a tenant policy let an admin see their own company.
     const { data: userRows, error: userErr } = await (supabase as any)
       .from('users')
-      .select('id, full_name, email, phone, company_id, is_active')
+      .select('id, full_name, email, phone, company_id, status')
       .is('deleted_at', null)
       .order('full_name');
 
@@ -135,7 +140,7 @@ export default function Users() {
           email: u.email ?? null,
           phone: u.phone ?? null,
           company_id: u.company_id ?? null,
-          is_active: u.is_active ?? null,
+          status: u.status ?? null,
           role_code: role?.code ?? null,
           role_name: role?.name ?? null,
         } as ManagedUser;
@@ -307,15 +312,21 @@ export default function Users() {
     await load();
   }
 
-  /** Blocks access without deleting the person's history. */
-  async function setActive(u: ManagedUser, active: boolean) {
+  /**
+   * Blocks access without deleting the person's history.
+   *
+   * public.users has no is_active column; access state lives in status. The
+   * literals below must match whatever the column allows — an enum or check
+   * constraint rejects anything else.
+   */
+  async function setStatus(u: ManagedUser, disabled: boolean) {
     setBusyId(u.id);
     setError(null);
     setNotice(null);
 
     const { data, error: updErr } = await (supabase as any)
       .from('users')
-      .update({ is_active: active })
+      .update({ status: disabled ? 'disabled' : 'active' })
       .eq('id', u.id)
       .select('id');
 
@@ -333,7 +344,7 @@ export default function Users() {
       return;
     }
 
-    setNotice(active ? 'Access restored.' : 'Access disabled.');
+    setNotice(disabled ? 'Access disabled.' : 'Access restored.');
     await load();
   }
 
@@ -424,9 +435,9 @@ export default function Users() {
                         </select>
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap">
-                        {u.is_active === false ? (
+                        {isDisabled(u.status) ? (
                           <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground ring-1 ring-inset ring-border">
-                            Disabled
+                            {u.status || 'Disabled'}
                           </span>
                         ) : (
                           <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 ring-1 ring-inset ring-emerald-600/20">
@@ -456,9 +467,9 @@ export default function Users() {
                             variant="outline"
                             className="h-9"
                             disabled={busyId === u.id}
-                            onClick={() => void setActive(u, u.is_active === false)}
+                            onClick={() => void setStatus(u, !isDisabled(u.status))}
                           >
-                            {u.is_active === false ? (
+                            {isDisabled(u.status) ? (
                               <>
                                 <UserCog className="mr-2 h-4 w-4" />
                                 Enable
