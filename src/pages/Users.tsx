@@ -215,13 +215,16 @@ export default function Users() {
     // An invitation that returns no row is one that did not create a user.
     const invited = Array.isArray(data) ? data[0] : data;
     const invitedId =
-      typeof invited === 'string'
-        ? invited
-        : ((invited as { id?: string; user_id?: string } | null)?.user_id ??
-          (invited as { id?: string } | null)?.id ??
-          null);
+  typeof invited === 'string'
+    ? invited
+    : (
+        (invited as any)?.invitation_id ??
+        (invited as any)?.user_id ??
+        (invited as any)?.id ??
+        null
+      );
 
-    if (!invitedId) {
+    if (!invited) {
       setSaving(false);
       setSaveError(
         'The invitation was not created. It may be blocked by a permissions rule.',
