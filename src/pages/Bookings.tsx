@@ -142,12 +142,12 @@ export default function Bookings() {
                 <thead className="bg-muted/60">
                   <tr className="text-left">
                     <th className="px-3 py-2 font-medium">Name</th>
-                    <th className="px-3 py-2 font-medium">Address</th>
-                    <th className="px-3 py-2 font-medium">Date / Time</th>
-                    <th className="px-3 py-2 font-medium">Email</th>
+                    <th className="px-3 py-2 font-medium">Phone Number</th>
+                    <th className="px-3 py-2 font-medium">Email Address</th>
                     <th className="px-3 py-2 font-medium">Unit</th>
-                    <th className="px-3 py-2 font-medium">Equipment Serial</th>
-                    <th className="px-3 py-2 font-medium">Phone</th>
+                    <th className="px-3 py-2 font-medium">Date &amp; Time</th>
+                    <th className="px-3 py-2 font-medium">Serial Number</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -155,25 +155,6 @@ export default function Bookings() {
                     <tr key={booking.id} className="border-t align-top">
                       <td className="px-3 py-2 font-medium">
                         {booking.full_name || 'Unknown Customer'}
-                      </td>
-                      <td className="px-3 py-2 text-muted-foreground">
-                        {booking.jobs?.title || booking.jobs?.job_number || '-'}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap tabular-nums">
-                        {formatBookingDate(booking.job_slots?.slot_date ?? null)}
-                        <span className="ml-1 text-muted-foreground">
-                          {formatTimeRange(
-                            booking.job_slots?.local_start ?? null,
-                            booking.job_slots?.local_end ?? null,
-                          )}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-muted-foreground">
-                        {booking.email || '-'}
-                      </td>
-                      <td className="px-3 py-2">{booking.unit_number || '-'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-muted-foreground">
-                        {booking.equipment_serial || '-'}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         {booking.phone ? (
@@ -186,6 +167,25 @@ export default function Bookings() {
                         ) : (
                           '-'
                         )}
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {booking.email || '-'}
+                      </td>
+                      <td className="px-3 py-2">{booking.unit_number || '-'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap tabular-nums">
+                        {formatBookingDate(booking.job_slots?.slot_date ?? null)}
+                        <span className="ml-1 text-muted-foreground">
+                          {formatTimeRange(
+                            booking.job_slots?.local_start ?? null,
+                            booking.job_slots?.local_end ?? null,
+                          )}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-muted-foreground">
+                        {booking.equipment_serial || '-'}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
+                        {booking.status || '-'}
                       </td>
                     </tr>
                   ))}
