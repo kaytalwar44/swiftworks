@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   CalendarDays,
   ChevronDown,
   ChevronUp,
   CheckCircle2,
   ClipboardList,
+  QrCode,
+  ScanLine,
   HardHat,
   Loader2,
   LogOut,
@@ -34,6 +36,7 @@ type PortalBooking = {
   unit_number: string | null;
   phone: string | null;
   status: string | null;
+  equipment_serial: string | null;
 };
 
 /** Booking outcomes a technician can record, mapped to customer_bookings.status. */
@@ -168,6 +171,19 @@ export default function TechnicianPortal() {
   const [bogReportNotice, setBogReportNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  /** Equipment scan dialog: which booking is being scanned, and its state. */
+  const [scanTarget, setScanTarget] = useState<{
+    booking: PortalBooking;
+    jobId: string;
+  } | null>(null);
+  const [scanValue, setScanValue] = useState('');
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanSaving, setScanSaving] = useState(false);
+  const [scanNotice, setScanNotice] = useState<string | null>(null);
+  const [scanActive, setScanActive] = useState(false);
+  /** The running html5-qrcode instance, kept so it can be stopped on close. */
+  const scannerRef = useRef<any>(null);
+
   const loadJobs = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -192,9 +208,146 @@ export default function TechnicianPortal() {
     setLoading(false);
   }, []);
 
+  /**
+   * Re-reads one job's bookings. Uses the same RPC as toggleBookings so a
+   * refreshed list can never show a different set of rows than the first load.
+   */
+  const loadBookings = useCallback(async (jobId: string) => {
+    const { data, error: rpcError } = await (supabase as any).rpc(
+      'technician_portal_bookings',
+      { p_job_id: jobId },
+    );
+
+    if (rpcError) {
+      console.error('technician_portal_bookings failed', rpcError);
+      setBookingsError(rpcError.message);
+      return;
+    }
+
+    setBookings((prev) => ({
+      ...prev,
+      [jobId]: (data ?? []) as PortalBooking[],
+    }));
+  }, []);
+
   useEffect(() => {
     void loadJobs();
   }, [loadJobs]);
+
+  /**
+   * Starts the camera in the dialog's reader div. The library is imported
+   * lazily so it never lands in the initial bundle — the portal is opened on
+   * phones over mobile data.
+   */
+  async function startScanner() {
+    setScanError(null);
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setScanError(
+        'This browser cannot open the camera. Enter the serial by hand below.',
+      );
+      return;
+    }
+
+    try {
+      // Typed locally: html5-qrcode's declaration file is not resolvable in
+      // every install (no "types" field on some published builds), which turns
+      // the import into an implicit-any error under "noImplicitAny".
+      const mod: any = await import('html5-qrcode');
+      const Html5Qrcode = mod.Html5Qrcode ?? mod.default ?? mod;
+
+      const reader = document.getElementById('equipment-reader');
+      if (!reader) return;
+
+      const scanner = new Html5Qrcode('equipment-reader');
+      scannerRef.current = scanner;
+      setScanActive(true);
+
+      await scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 240, height: 240 } },
+        (decodedText: string) => {
+          // One good read is enough; stop before the callback fires again.
+          setScanValue(decodedText.trim());
+          setScanNotice('QR code read.');
+          void stopScanner();
+        },
+        (_errorMessage: string) => {
+          // Frames that hold no code arrive here constantly; not an error.
+        },
+      );
+    } catch (err: any) {
+      setScanActive(false);
+      scannerRef.current = null;
+      const message = String(err?.message ?? err ?? '');
+      setScanError(
+        /permission|denied|NotAllowed/i.test(message)
+          ? 'Camera access was refused. Allow it in the browser, or enter the serial by hand below.'
+          : 'The camera could not be started. Enter the serial by hand below.',
+      );
+    }
+  }
+
+  async function stopScanner() {
+    const scanner = scannerRef.current;
+    scannerRef.current = null;
+    setScanActive(false);
+    if (!scanner) return;
+    try {
+      await scanner.stop();
+      scanner.clear();
+    } catch {
+      // Already stopped, or the camera was never acquired.
+    }
+  }
+
+  function closeScanner() {
+    void stopScanner();
+    setScanTarget(null);
+    setScanValue('');
+    setScanError(null);
+    setScanNotice(null);
+  }
+
+  /** Writes the scanned serial to the booking and refreshes that job's list. */
+  async function saveSerial() {
+    if (!scanTarget) return;
+
+    const serial = scanValue.trim();
+    if (serial === '') {
+      setScanError('Scan a code or type the serial first.');
+      return;
+    }
+
+    const { booking, jobId } = scanTarget;
+    setScanSaving(true);
+    setScanError(null);
+
+    const { data, error: updError } = await (supabase as any)
+      .from('customer_bookings')
+      .update({ equipment_serial: serial })
+      .eq('id', booking.booking_id)
+      .select('id');
+
+    setScanSaving(false);
+
+    if (updError) {
+      setScanError(updError.message);
+      return;
+    }
+
+    // An update matching no rows returns no error, so check the row came back.
+    if ((data ?? []).length === 0) {
+      setScanError(
+        'The serial was not saved. It may be blocked by a permissions rule.',
+      );
+      return;
+    }
+
+    closeScanner();
+    setActionNotice('Equipment serial saved.');
+    await loadBookings(jobId);
+  }
 
   async function toggleBookings(jobId: string) {
     setBookingsError(null);
@@ -545,6 +698,18 @@ export default function TechnicianPortal() {
                               </div>
                             </div>
 
+                            <div className="mt-2 flex items-center gap-2 text-sm">
+                              <ScanLine className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-muted-foreground">Serial: </span>
+                              {b.equipment_serial ? (
+                                <span className="font-medium">{b.equipment_serial}</span>
+                              ) : (
+                                <span className="text-muted-foreground">
+                                  Not scanned
+                                </span>
+                              )}
+                            </div>
+
                             {b.phone ? (
                               <a
                                 href={'tel:' + b.phone}
@@ -606,6 +771,22 @@ export default function TechnicianPortal() {
                                     Save Outcome
                                   </>
                                 )}
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-10 sm:w-36"
+                                disabled={actingId === b.booking_id}
+                                onClick={() => {
+                                  setScanTarget({ booking: b, jobId: job.job_id });
+                                  setScanValue(b.equipment_serial ?? '');
+                                  setScanError(null);
+                                  setScanNotice(null);
+                                }}
+                              >
+                                <QrCode className="mr-2 h-4 w-4" />
+                                Scan QR Code
                               </Button>
                             </div>
                           </div>
@@ -674,6 +855,99 @@ export default function TechnicianPortal() {
                   </>
                 ) : (
                   'Save Outcome'
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Equipment scan — writes equipment_serial on the booking */}
+      {scanTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="scan-title"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') closeScanner();
+          }}
+          tabIndex={-1}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeScanner();
+          }}
+        >
+          <div className="w-full max-w-sm space-y-4 rounded-lg border bg-background p-5 shadow-xl">
+            <div>
+              <h2 id="scan-title" className="text-lg font-semibold">
+                Scan equipment QR code
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {scanTarget.booking.customer_name || 'This customer'}
+                {scanTarget.booking.unit_number
+                  ? ' - Unit ' + scanTarget.booking.unit_number
+                  : ''}
+              </p>
+            </div>
+
+            {/* The library renders its video into this element. */}
+            <div
+              id="equipment-reader"
+              className="aspect-square w-full overflow-hidden rounded border bg-muted/40"
+            />
+
+            {scanActive ? (
+              <Button variant="outline" className="w-full" onClick={() => void stopScanner()}>
+                Stop camera
+              </Button>
+            ) : (
+              <Button className="w-full" onClick={() => void startScanner()}>
+                <QrCode className="mr-2 h-4 w-4" />
+                Start camera
+              </Button>
+            )}
+
+            <div className="space-y-1.5">
+              <label htmlFor="equipment-serial" className="text-sm font-medium">
+                Equipment serial
+              </label>
+              <input
+                id="equipment-serial"
+                type="text"
+                className="w-full rounded border p-2 text-sm"
+                placeholder="Scan a code, or type the serial"
+                value={scanValue}
+                disabled={scanSaving}
+                onChange={(e) => {
+                  setScanValue(e.target.value);
+                  setScanError(null);
+                }}
+              />
+              {scanNotice && (
+                <p className="text-sm text-muted-foreground">{scanNotice}</p>
+              )}
+              {scanError && (
+                <p role="alert" className="text-sm text-destructive">
+                  {scanError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={closeScanner}>
+                Cancel
+              </Button>
+              <Button
+                disabled={scanSaving || scanValue.trim() === ''}
+                onClick={() => void saveSerial()}
+              >
+                {scanSaving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Serial'
                 )}
               </Button>
             </div>
