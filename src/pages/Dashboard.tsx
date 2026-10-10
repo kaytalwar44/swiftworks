@@ -147,6 +147,7 @@ function TechnicianDashboardView() {
     refetchInterval: 60_000,
   });
 
+
   const queryClient = useQueryClient();
 
   /** booking id currently being actioned. */
@@ -774,6 +775,42 @@ export default function Dashboard() {
     refetchInterval: 60_000,
   });
 
+  const { data: health } = useQuery({
+    queryKey: ['dashboard', 'booking-health'],
+    queryFn: async () => {
+      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: rows, error: rowsError } = await (supabase as any)
+        .from('customer_bookings')
+        .select('status')
+        .gte('created_at', since)
+        .is('deleted_at', null);
+
+      if (rowsError) throw rowsError;
+
+      const counts: Record<string, number> = {};
+      for (const r of (rows ?? []) as { status: string | null }[]) {
+        const k = String(r.status ?? '');
+        counts[k] = (counts[k] ?? 0) + 1;
+      }
+
+      const completed = counts['completed'] ?? 0;
+      const refused = counts['customer_refused'] ?? 0;
+      const noShow = counts['no_show'] ?? 0;
+      // Rescheduled is excluded: the visit has not reached a final outcome.
+      const attempted = completed + refused + noShow;
+
+      return {
+        confirmed: counts['confirmed'] ?? 0,
+        completed,
+        refused,
+        noShow,
+        rescheduled: counts['rescheduled'] ?? 0,
+        rate: attempted === 0 ? null : Math.round((completed / attempted) * 100),
+      };
+    },
+    refetchInterval: 60_000,
+  });
+
   if (isPending) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -894,20 +931,16 @@ export default function Dashboard() {
           <CardTitle className="text-base">Booking health — last 30 days</CardTitle>
         </CardHeader>
         <CardContent>
-          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
             {[
-              { label: 'Created', value: summary.bookings.total },
-              { label: 'Confirmed', value: summary.bookings.confirmed },
-              { label: 'Completed', value: summary.bookings.completed },
-              { label: 'No-show', value: summary.bookings.no_show },
+              { label: 'Confirmed', value: health?.confirmed ?? 0 },
+              { label: 'Completed', value: health?.completed ?? 0 },
+              { label: 'Customer Refused', value: health?.refused ?? 0 },
+              { label: 'Customer Not At Home', value: health?.noShow ?? 0 },
+              { label: 'Rescheduled', value: health?.rescheduled ?? 0 },
               {
-                label: 'Completion rate',
-                value:
-                  summary.bookings.total === 0
-                    ? '—'
-                    : `${Math.round(
-                        (summary.bookings.completed / summary.bookings.total) * 100,
-                      )}%`,
+                label: 'Completion Rate',
+                value: health?.rate == null ? '—' : `${health.rate}%`,
               },
             ].map((stat) => (
               <div key={stat.label}>
