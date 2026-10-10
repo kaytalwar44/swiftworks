@@ -214,6 +214,21 @@ export default function Users() {
 
     // An invitation that returns no row is one that did not create a user.
     const invited = Array.isArray(data) ? data[0] : data;
+    if (invited?.email && invited?.token) {
+  const { error: emailError } = await supabase.functions.invoke(
+    'send-invitation-email',
+    {
+      body: {
+        email: invited.email,
+        token: invited.token,
+      },
+    },
+  );
+
+  if (emailError) {
+    console.error('Invitation email failed', emailError);
+  }
+}
     const invitedId =
   typeof invited === 'string'
     ? invited
