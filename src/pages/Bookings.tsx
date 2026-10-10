@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 type Booking = {
   id: string;
+  site_address: string | null;
   booking_ref: string | null;
   status: string | null;
   full_name: string | null;
@@ -23,6 +24,7 @@ type Booking = {
   jobs: {
     title: string | null;
     job_number: string | null;
+    address: string | null;
   } | null;
 };
 
@@ -62,7 +64,7 @@ export default function Bookings() {
         .select(
           'id, booking_ref, status, full_name, phone, email, unit_number, equipment_serial, slot_id, job_id, ' +
             'job_slots ( slot_date, local_start, local_end ), ' +
-            'jobs ( title, job_number )',
+            'jobs ( title, job_number, address )',
         )
         .order('booking_ref');
 
@@ -141,6 +143,8 @@ export default function Bookings() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/60">
                   <tr className="text-left">
+                    <th className="px-3 py-2 font-medium">Job Number</th>
+                    <th className="px-3 py-2 font-medium">Site Address</th>
                     <th className="px-3 py-2 font-medium">Name</th>
                     <th className="px-3 py-2 font-medium">Phone Number</th>
                     <th className="px-3 py-2 font-medium">Email Address</th>
@@ -153,6 +157,15 @@ export default function Bookings() {
                 <tbody>
                   {sortedBookings.map((booking) => (
                     <tr key={booking.id} className="border-t align-top">
+                      <td className="px-3 py-2 whitespace-nowrap font-medium">
+                        {booking.jobs?.job_number || '-'}
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {booking.site_address ||
+                          booking.jobs?.address ||
+                          booking.jobs?.title ||
+                          '-'}
+                      </td>
                       <td className="px-3 py-2 font-medium">
                         {booking.full_name || 'Unknown Customer'}
                       </td>
