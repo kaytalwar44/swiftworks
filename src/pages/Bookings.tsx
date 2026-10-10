@@ -24,7 +24,6 @@ type Booking = {
   jobs: {
     title: string | null;
     job_number: string | null;
-    address: string | null;
   } | null;
 };
 
@@ -97,6 +96,7 @@ function statusStyle(status: string | null) {
 export default function Bookings() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadBookings() {
@@ -105,18 +105,21 @@ export default function Bookings() {
         .select(
           'id, booking_ref, status, full_name, phone, email, unit_number, equipment_serial, slot_id, job_id, ' +
             'job_slots ( slot_date, local_start, local_end ), ' +
-            'jobs ( title, job_number, address )',
+            'jobs ( title, job_number )',
         )
         .order('booking_ref');
 
       if (error) {
-        console.error(error);
+        // One unknown column makes PostgREST reject the whole select, which
+        // otherwise reads as "no bookings" rather than as a broken query.
+        console.error('customer_bookings select failed', error);
+        setError(error.message);
+        setBookings([]);
+        setLoading(false);
+        return;
       }
 
-      if (!error && data) {
-        setBookings(data as Booking[]);
-      }
-
+      setBookings((data ?? []) as Booking[]);
       setLoading(false);
     }
 
@@ -177,6 +180,10 @@ export default function Bookings() {
         <CardContent>
           {loading ? (
             <p>Loading bookings...</p>
+          ) : error ? (
+            <p role="alert" className="text-destructive">
+              Bookings could not be loaded: {error}
+            </p>
           ) : bookings.length === 0 ? (
             <p>No bookings found.</p>
           ) : (
@@ -202,10 +209,7 @@ export default function Bookings() {
                         {booking.jobs?.job_number || '-'}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">
-                        {booking.site_address ||
-                          booking.jobs?.address ||
-                          booking.jobs?.title ||
-                          '-'}
+                        {booking.site_address || booking.jobs?.title || '-'}
                       </td>
                       <td className="px-3 py-2 font-medium">
                         {booking.full_name || 'Unknown Customer'}
