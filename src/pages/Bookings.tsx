@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 type Booking = {
   id: string;
-  site_address: string | null;
   booking_ref: string | null;
   status: string | null;
   full_name: string | null;
@@ -22,10 +21,47 @@ type Booking = {
     local_end: string | null;
   } | null;
   jobs: {
-    title: string | null;
     job_number: string | null;
+    title: string | null;
+    address_line1: string | null;
+    address_line2: string | null;
+    suburb: string | null;
+    state: string | null;
+    postcode: string | null;
   } | null;
 };
+
+/**
+ * Site address for a booking's job.
+ *
+ * Built from address fields only. jobs.site_name is where the campaign name
+ * ("NBN Fibre upgrade") is typed, and jobs.title is the campaign title -
+ * neither is an address, and falling back to them put a project name under a
+ * column headed Site Address.
+ */
+function formatJobAddress(
+  job: {
+    address_line1?: string | null;
+    address_line2?: string | null;
+    suburb?: string | null;
+    state?: string | null;
+    postcode?: string | null;
+  } | null,
+): string {
+  if (!job) return '';
+
+  const street = [job.address_line1, job.address_line2]
+    .map((v) => (v ?? '').trim())
+    .filter(Boolean)
+    .join(', ');
+
+  const locality = [job.suburb, job.state, job.postcode]
+    .map((v) => (v ?? '').trim())
+    .filter(Boolean)
+    .join(' ');
+
+  return [street, locality].filter(Boolean).join(', ');
+}
 
 /** 2026-10-05 -> 05 Oct 2026 */
 function formatBookingDate(value: string | null): string {
@@ -105,7 +141,7 @@ export default function Bookings() {
         .select(
           'id, booking_ref, status, full_name, phone, email, unit_number, equipment_serial, slot_id, job_id, ' +
             'job_slots ( slot_date, local_start, local_end ), ' +
-            'jobs ( title, job_number )',
+            'jobs ( job_number, title, address_line1, address_line2, suburb, state, postcode )',
         )
         .order('booking_ref');
 
@@ -209,7 +245,7 @@ export default function Bookings() {
                         {booking.jobs?.job_number || '-'}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">
-                        {booking.site_address || booking.jobs?.title || '-'}
+                        {formatJobAddress(booking.jobs) || '-'}
                       </td>
                       <td className="px-3 py-2 font-medium">
                         {booking.full_name || 'Unknown Customer'}
