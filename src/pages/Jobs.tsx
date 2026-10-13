@@ -1,7 +1,15 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import {
   Building2,
   CalendarPlus,
+  ChevronDown,
+  ChevronUp,
   ExternalLink,
   List,
   Loader2,
@@ -128,6 +136,62 @@ function eachDate(startDate: string, endDate: string): string[] {
   return dates;
 }
 
+/** One booking as listed under its job. */
+type JobBooking = {
+  id: string;
+  booking_ref: string | null;
+  status: string | null;
+  full_name: string | null;
+  job_id: string | null;
+  slot_date: string | null;
+  local_start: string | null;
+  technician_name: string | null;
+};
+
+/** Booking status colours, matching the Bookings page so a status reads the same. */
+const BOOKING_STATUS_STYLES: Record<
+  string,
+  { label: string; className: string }
+> = {
+  confirmed: { label: 'Confirmed', className: 'bg-blue-100 text-blue-800 ring-blue-600/20' },
+  completed: { label: 'Completed', className: 'bg-emerald-100 text-emerald-800 ring-emerald-600/20' },
+  customer_refused: { label: 'Customer Refused', className: 'bg-red-100 text-red-800 ring-red-600/20' },
+  no_show: { label: 'Customer Not At Home', className: 'bg-amber-100 text-amber-900 ring-amber-600/20' },
+  rescheduled: { label: 'Rescheduled', className: 'bg-violet-100 text-violet-800 ring-violet-600/20' },
+};
+
+function bookingStatusStyle(status: string | null) {
+  const key = String(status ?? '').trim();
+  return (
+    BOOKING_STATUS_STYLES[key] ?? {
+      label: key === '' ? '-' : key.replace(/_/g, ' '),
+      className: 'bg-muted text-muted-foreground ring-border',
+    }
+  );
+}
+
+/**
+ * Badge colour by booking count: grey for none, blue for a few, amber once a
+ * job is filling up. Thresholds live here so the badge and any future summary
+ * read the same rule.
+ */
+function bookingCountClass(count: number): string {
+  if (count === 0) return 'bg-muted text-muted-foreground ring-border';
+  if (count <= 4) return 'bg-blue-100 text-blue-800 ring-blue-600/20';
+  return 'bg-amber-100 text-amber-900 ring-amber-600/20';
+}
+
+/** 2026-10-14 -> 14 Oct 2026 */
+function formatBookingDate(value: string | null): string {
+  if (!value) return 'No date';
+  const d = new Date(value + 'T00:00:00');
+  return d.toLocaleDateString('en-AU', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 export default function Jobs() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -169,6 +233,119 @@ export default function Jobs() {
   const [assignSaving, setAssignSaving] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
 
+  /** Mirror of assignedTechs, read by loadBookings without a dependency. */
+  const assignedTechsRef = useRef<Record<string, string>>({});
+
+  /** Bookings grouped by job id, loaded for every job on screen at once. */
+  const [bookingsByJob, setBookingsByJob] = useState<
+    Record<string, JobBooking[]>
+  >({});
+  const [bookingsError, setBookingsError] = useState<string | null>(null);
+  const [expandedJobIds, setExpandedJobIds] = useState<Set<string>>(new Set());
+
+  /**
+   * Loads every booking for the jobs on screen in a bounded number of queries,
+   * never one per job. The rows reuse the customer_bookings select loadJobs
+   * already makes for the lock map, so the table is not scanned twice.
+   */
+  const loadBookings = useCallback(async (jobsOnScreen: Job[]) => {
+    setBookingsError(null);
+
+    const jobIds = jobsOnScreen.map((j) => j.id);
+    if (jobIds.length === 0) {
+      setBookingsByJob({});
+      return;
+    }
+
+    const { data: slice, error: rowsErr } = await (supabase as any)
+      .from('customer_bookings')
+      .select(
+        'id, booking_ref, status, full_name, job_id, technician_id, job_slots ( slot_date, local_start )',
+      )
+      .in('job_id', jobIds)
+      .is('deleted_at', null);
+
+    let rows = (slice ?? []) as any[];
+
+    // technician_id is convenient but not essential: if the column is absent,
+    // re-query without it and fall back to the job's lead technician.
+    if (rowsErr) {
+      const { data: basic, error: basicErr } = await (supabase as any)
+        .from('customer_bookings')
+        .select(
+          'id, booking_ref, status, full_name, job_id, job_slots ( slot_date, local_start )',
+        )
+        .in('job_id', jobIds)
+        .is('deleted_at', null);
+
+      if (basicErr) {
+        console.error('job bookings select failed', basicErr);
+        setBookingsError(basicErr.message);
+        setBookingsByJob({});
+        return;
+      }
+      rows = (basic ?? []) as any[];
+    }
+
+    // Fallback: the lead (or first) technician already resolved per job.
+    const leadNameByJob: Record<string, string> = {};
+    for (const j of jobsOnScreen) {
+      const name = assignedTechsRef.current[j.id];
+      if (name) leadNameByJob[j.id] = name;
+    }
+
+    // One query for every technician referenced by any booking.
+    const techIds = Array.from(
+      new Set(rows.map((r) => r.technician_id).filter((v): v is string => !!v)),
+    );
+    const techName = new Map<string, string>();
+    if (techIds.length > 0) {
+      const { data: techs } = await (supabase as any)
+        .from('technicians')
+        .select('id, full_name, code')
+        .in('id', techIds);
+      for (const t of (techs ?? []) as any[]) {
+        techName.set(t.id, t.full_name || t.code || 'Unnamed technician');
+      }
+    }
+
+    const grouped: Record<string, JobBooking[]> = {};
+    for (const r of rows) {
+      if (!r.job_id) continue;
+      const own = r.technician_id ? techName.get(r.technician_id) : null;
+      (grouped[r.job_id] ??= []).push({
+        id: r.id,
+        booking_ref: r.booking_ref ?? null,
+        status: r.status ?? null,
+        full_name: r.full_name ?? null,
+        job_id: r.job_id,
+        slot_date: r.job_slots?.slot_date ?? null,
+        local_start: r.job_slots?.local_start ?? null,
+        technician_name: own ?? leadNameByJob[r.job_id] ?? null,
+      });
+    }
+
+    // Earliest first; bookings with no slot fall to the end.
+    for (const list of Object.values(grouped)) {
+      list.sort((a, b) => {
+        const ka = (a.slot_date ?? '9999-12-31') + (a.local_start ?? '');
+        const kb = (b.slot_date ?? '9999-12-31') + (b.local_start ?? '');
+        return ka < kb ? -1 : ka > kb ? 1 : 0;
+      });
+    }
+
+    setBookingsByJob(grouped);
+  }, []);
+
+  function toggleJobBookings(jobId: string) {
+    setExpandedJobIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobId)) next.delete(jobId);
+      else next.add(jobId);
+      return next;
+    });
+  }
+
   const loadJobs = useCallback(async () => {
     setLoading(true);
 
@@ -209,6 +386,7 @@ export default function Jobs() {
       if (row.is_lead === false && assigned[row.job_id]) continue;
       assigned[row.job_id] = name;
     }
+    assignedTechsRef.current = assigned;
     setAssignedTechs(assigned);
 
     if (error) {
@@ -217,14 +395,29 @@ export default function Jobs() {
     }
 
     if (!error && data) {
-      setJobs(data as unknown as Job[]);
+      const loaded = data as unknown as Job[];
+      setJobs(loaded);
+      await loadBookings(loaded);
     }
 
     setLoading(false);
-  }, []);
+  }, [loadBookings]);
 
   useEffect(() => {
     void loadJobs();
+  }, [loadJobs]);
+
+  // A booking can be created on the Bookings page, by a resident, or removed
+  // from the technician portal - none of which this page hears about. Re-reading
+  // on focus keeps the counts honest, and switching back to this tab is exactly
+  // when someone reads them. No realtime channel needed.
+  useEffect(() => {
+    function onFocus() {
+      void loadJobs();
+    }
+
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, [loadJobs]);
 
   function openEdit(job: Job) {
@@ -648,8 +841,22 @@ export default function Jobs() {
             <div className="space-y-3">
               {jobs.map((job) => (
                 <div key={job.id} className="rounded border p-4">
-                  <div className="font-medium">
-                    {job.title || 'Untitled Job'}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">
+                      {job.title || 'Untitled Job'}
+                    </span>
+                    <span
+                      className={
+                        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ' +
+                        bookingCountClass((bookingsByJob[job.id] ?? []).length)
+                      }
+                      title="Bookings for this job"
+                    >
+                      {(bookingsByJob[job.id] ?? []).length}{' '}
+                      {(bookingsByJob[job.id] ?? []).length === 1
+                        ? 'booking'
+                        : 'bookings'}
+                    </span>
                   </div>
 
                   <div className="text-sm text-muted-foreground">
@@ -682,6 +889,73 @@ export default function Jobs() {
 
                   <div className="text-sm text-muted-foreground">
                     Technician: {assignedTechs[job.id] || 'Unassigned'}
+                  </div>
+
+                  {/* Bookings under this job */}
+                  <div className="mt-3 rounded border bg-muted/20">
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium"
+                      aria-expanded={expandedJobIds.has(job.id)}
+                      aria-controls={'job-bookings-' + job.id}
+                      onClick={() => toggleJobBookings(job.id)}
+                    >
+                      <span>
+                        Bookings ({(bookingsByJob[job.id] ?? []).length})
+                      </span>
+                      {expandedJobIds.has(job.id) ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                    </button>
+
+                    {expandedJobIds.has(job.id) && (
+                      <div
+                        id={'job-bookings-' + job.id}
+                        className="border-t px-3 py-2"
+                      >
+                        {bookingsError ? (
+                          <p role="alert" className="text-sm text-destructive">
+                            Bookings could not be loaded: {bookingsError}
+                          </p>
+                        ) : (bookingsByJob[job.id] ?? []).length === 0 ? (
+                          <p className="text-sm text-muted-foreground">
+                            No bookings yet
+                          </p>
+                        ) : (
+                          <ul className="divide-y text-sm">
+                            {(bookingsByJob[job.id] ?? []).map((b) => {
+                              const st = bookingStatusStyle(b.status);
+                              return (
+                                <li
+                                  key={b.id}
+                                  className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"
+                                >
+                                  <span className="w-28 shrink-0 tabular-nums">
+                                    {formatBookingDate(b.slot_date)}
+                                  </span>
+                                  <span className="min-w-[8rem] flex-1 font-medium">
+                                    {b.full_name || 'Unknown Customer'}
+                                  </span>
+                                  <span className="text-muted-foreground">
+                                    {b.technician_name || 'Unassigned'}
+                                  </span>
+                                  <span
+                                    className={
+                                      'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ' +
+                                      st.className
+                                    }
+                                  >
+                                    {st.label}
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2">
