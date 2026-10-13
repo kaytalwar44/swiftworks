@@ -77,6 +77,29 @@ type BookingLink = {
 };
 
 /**
+ * The canonical public host for resident-facing links.
+ *
+ * A booking URL is printed, laminated and stuck on a unit, then scanned months
+ * later by someone who has never heard of this app. It must therefore point at
+ * one address forever - never at whichever hostname the admin happened to be
+ * signed in on.
+ *
+ * window.location.origin looks harmless and is not: Vercel serves every
+ * deployment from its own hostname above the production domain, so a link
+ * generated on one of those bakes that host into the database. The QR then
+ * sends residents somewhere that may require Vercel authentication, or may no
+ * longer exist by the time the code is scanned.
+ *
+ * The literal is the fallback for a build with no environment variable set -
+ * local dev, and any deploy that forgot to configure it. It is the real domain
+ * rather than window.location.origin, so a misconfigured build still produces a
+ * link that works in the field. Set VITE_PUBLIC_APP_URL=http://localhost:5173
+ * in .env.local so local dev does not write production URLs.
+ */
+const PUBLIC_APP_URL =
+  import.meta.env.VITE_PUBLIC_APP_URL ?? 'https://swiftworks.auss-tech.com.au';
+
+/**
  * QR image service. The host is assembled from parts so that copying this
  * file out of a chat or editor cannot auto-link the domain.
  */
@@ -541,7 +564,11 @@ export default function Jobs() {
     setNotice(null);
 
     const token = crypto.randomUUID();
-    const bookingUrl = `${window.location.origin}/book/${token}`;
+    // Built from PUBLIC_APP_URL, never from the admin's current address. A
+    // stale host here is invisible in the UI - the caption, the copied link and
+    // the QR all show the same wrong URL - and only surfaces when a resident
+    // scans the code.
+    const bookingUrl = `${PUBLIC_APP_URL}/book/${token}`;
 
     const { data, error } = await (supabase as any)
       .from('booking_links')
