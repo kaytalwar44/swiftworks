@@ -288,12 +288,11 @@ export default function Technicians() {
       return;
     }
 
-    const { data, error: rpcError } = await (supabase as any).rpc('invite_user', {
+    const targetCompanyId = await resolveCompanyId();
+    const { data, error: rpcError } = await (supabase as any).rpc('hierarchy_invite', {
+      p_company_id: targetCompanyId,
       p_email: t.email.trim().toLowerCase(),
-      p_role_id: '5f2749c9-b1ce-4a07-8fd4-a0b935c8ba21',
-      p_partner_id: null,
-      p_member_type: 'staff',
-      p_expires_days: 14,
+      p_role_code: 'technician',
     });
 
     setBusyId(null);
@@ -322,6 +321,13 @@ export default function Technicians() {
     }
 
     const row = Array.isArray(data) ? data[0] : data;
+    const { error: deliveryError } = await supabase.functions.invoke('send-invitation', {
+      body: { token: row?.token },
+    });
+    if (deliveryError) {
+      setNotice('Invitation saved, but email delivery failed. Retry to resend it.');
+      return;
+    }
     setNotice(
       row?.is_resend
         ? 'Invitation resent to ' + t.email + '.'
