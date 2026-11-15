@@ -5,9 +5,10 @@
  *
  * Called from the Users page straight after invite_user() succeeds:
  *
- *   await supabase.functions.invoke('send-invitation', {
- *     body: { email, token, role, company_name, expires_at, full_name },
- *   });
+ *   await supabase.functions.invoke('send-invitation', { body: { token } });
+ *
+ * Existing callers may still pass email/role/company fields. Those fields are
+ * deliberately ignored: only the authorized database record supplies them.
  *
  * Deploy:
  *   supabase functions deploy send-invitation
@@ -16,14 +17,19 @@
  */
 
 import { Resend } from "npm:resend";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
 const APP_URL = (Deno.env.get('APP_URL') ?? '').replace(/\/+$/, '');
 const INVITE_FROM =
   Deno.env.get('INVITE_FROM') ?? 'SwiftWorks <onboarding@resend.dev>';
 
 /** Roles this app knows how to name in an email. */
 const ROLE_LABELS: Record<string, string> = {
+  owner: 'an owner',
+  admin: 'an administrator',
   company_admin: 'an administrator',
   technician: 'a technician',
 };
@@ -138,7 +144,7 @@ function buildText(args: {
     .join('\n');
 }
 
-Deno.serve(async (req) => {
+export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS });
   }
@@ -147,59 +153,84 @@ Deno.serve(async (req) => {
     return json({ error: 'Method not allowed' }, 405);
   }
 
-  if (!RESEND_API_KEY) {
-    return json({ error: 'RESEND_API_KEY is not set on this function.' }, 500);
+  const authorization = req.headers.get('authorization');
+  if (!authorization || !/^Bearer \S+$/i.test(authorization)) {
+    return json({ error: 'Authentication required.' }, 401);
   }
 
-  if (!APP_URL) {
-    return json({ error: 'APP_URL is not set on this function.' }, 500);
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return json({ error: 'Invitation delivery is unavailable.' }, 503);
   }
-
-  let payload: {
-    email?: string;
-    token?: string;
-    role?: string;
-    company_name?: string;
-    full_name?: string;
-    expires_at?: string | null;
-  };
 
   try {
-    payload = await req.json();
+    // Never create a service-role client here. getUser validates the bearer
+    // token with Auth; the RPC runs with this caller's verified session.
+    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authorization } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data: identity, error: identityError } = await client.auth.getUser();
+    if (identityError || !identity.user) {
+      return json({ error: 'Authentication required.' }, 401);
+    }
+
+    let payload: unknown;
+    try {
+      payload = await req.json();
+    } catch {
+      return json({ error: 'Expected a JSON body.' }, 400);
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return json({ error: 'An invitation token is required.' }, 400);
+    }
+    const tokenValue = (payload as { token?: unknown }).token;
+    if (typeof tokenValue !== 'string' ||
+        tokenValue.trim() === '' || tokenValue.length > 256) {
+      return json({ error: 'An invitation token is required.' }, 400);
+    }
+
+    const { data: invitations, error: invitationError } = await client.rpc(
+      'invitation_for_delivery',
+      { p_token: tokenValue.trim() },
+    );
+    if (invitationError || !Array.isArray(invitations) ||
+        invitations.length !== 1) {
+      return json({ error: 'Invitation delivery forbidden.' }, 403);
+    }
+
+    const invitation = invitations[0] as {
+      email: string; token: string; role_code: string;
+      company_name: string; expires_at: string;
+    };
+    if (!RESEND_API_KEY || !APP_URL) {
+      return json({ error: 'Invitation delivery is unavailable.' }, 503);
+    }
+
+    const role = ROLE_LABELS[invitation.role_code] ??
+      invitation.role_code.replace(/_/g, ' ');
+    const link = `${APP_URL}/invite/${encodeURIComponent(invitation.token)}`;
+    const expires = formatExpiry(invitation.expires_at);
+    const company = invitation.company_name;
+
+    const resend = new Resend(RESEND_API_KEY);
+
+    const { data, error } = await resend.emails.send({
+      from: INVITE_FROM,
+      to: invitation.email,
+      subject: `You have been invited to ${company}`,
+      html: buildHtml({ link, company, role, expires }),
+      text: buildText({ link, company, role, expires }),
+    });
+
+    if (error) {
+      return json({ error: 'The invitation email was not sent.' }, 502);
+    }
+
+    return json({ ok: true, id: data?.id ?? null, to: invitation.email });
   } catch {
-    return json({ error: 'Expected a JSON body.' }, 400);
+    // Do not return provider errors, bearer tokens or database internals.
+    return json({ error: 'Invitation delivery is unavailable.' }, 503);
   }
+}
 
-  const email = (payload.email ?? '').trim().toLowerCase();
-  const token = (payload.token ?? '').trim();
-  const roleRaw = (payload.role ?? 'technician').trim();
-  const company = (payload.company_name ?? 'your company').trim();
-
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return json({ error: 'A valid email address is required.' }, 400);
-  }
-
-  if (token === '') {
-    return json({ error: 'A token is required.' }, 400);
-  }
-
-  const role = ROLE_LABELS[roleRaw] ?? roleRaw.replace(/_/g, ' ');
-  const link = `${APP_URL}/invite/${encodeURIComponent(token)}`;
-  const expires = formatExpiry(payload.expires_at);
-
-  const resend = new Resend(RESEND_API_KEY);
-
-  const { data, error } = await resend.emails.send({
-    from: INVITE_FROM,
-    to: email,
-    subject: `You have been invited to ${company}`,
-    html: buildHtml({ link, company, role, expires }),
-    text: buildText({ link, company, role, expires }),
-  });
-
-  if (error) {
-    return json({ error: error.message ?? 'The email was not sent.' }, 502);
-  }
-
-  return json({ ok: true, id: data?.id ?? null, to: email });
-});
+Deno.serve(handleRequest);
