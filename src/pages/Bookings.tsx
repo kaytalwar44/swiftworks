@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CalendarDays } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase/client';
+import { ExportButton } from '@/components/shared/export-button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 type Booking = {
@@ -211,6 +212,13 @@ export default function Bookings() {
       <Card>
         <CardHeader>
           <CardTitle>Booking List</CardTitle>
+          <ExportButton name="swiftworks-bookings" disabled={loading || !!error}
+            headers={['Booking Reference', 'Job Number', 'Site Address', 'Name', 'Phone', 'Email', 'Unit', 'Date', 'Time', 'Serial Number', 'Status']}
+            rows={sortedBookings.map((booking) => [booking.booking_ref, booking.jobs?.job_number,
+              formatJobAddress(booking.jobs), booking.full_name, booking.phone, booking.email,
+              booking.unit_number, booking.job_slots?.slot_date,
+              formatTimeRange(booking.job_slots?.local_start ?? null, booking.job_slots?.local_end ?? null),
+              booking.equipment_serial, statusStyle(booking.status).label])} />
         </CardHeader>
 
         <CardContent>

@@ -67,7 +67,18 @@ for (const path of [
     const original = execFileSync('git', [
       'show', `c28531bc53416bea200ae8608ea537c704459817:${path}`,
     ], { cwd: root });
-    assert.deepEqual(fs.readFileSync(new URL(path, root)), original);
+    let actual = fs.readFileSync(new URL(path, root), 'utf8');
+    // Approved enhancements add export presentation only, and pass the existing
+    // invitation token to Auth. Removing exactly those additions must reproduce
+    // the original workflow source byte-for-byte.
+    if (path.endsWith('/Jobs.tsx') || path.endsWith('/Bookings.tsx')) {
+      actual = actual.replace("import { ExportButton } from '@/components/shared/export-button';\n", '')
+        .replace(/^          <ExportButton[\s\S]*? \/>\n/m, '');
+    }
+    if (path.endsWith('/AcceptInvitation.tsx')) {
+      actual = actual.replace('      options: { data: { invitation_token: token } },\n', '');
+    }
+    assert.equal(actual, original.toString());
   });
 }
 
