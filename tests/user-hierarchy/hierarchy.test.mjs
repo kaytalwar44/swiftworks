@@ -73,7 +73,6 @@ for (const path of [
     // the original workflow source byte-for-byte.
     if (path.endsWith('/Jobs.tsx') || path.endsWith('/Bookings.tsx')) {
       actual = actual.replace("import { ExportButton } from '@/components/shared/export-button';\n", '')
-        .replace('      <div className="rounded border-2 border-amber-600 bg-amber-100 p-3 font-bold text-black">EXPORT_BRANCH_TEST</div>\n', '')
         .replace(/^          <ExportButton[\s\S]*? \/>\n/m, '');
     }
     if (path.endsWith('/AcceptInvitation.tsx')) {
