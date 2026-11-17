@@ -667,7 +667,7 @@ function TechnicianDashboardView() {
   );
 }
 
-export default function Dashboard() {
+function DashboardContent() {
   const navigate = useNavigate();
   const { company, hasPermission, hasRole } = useAuth();
 
@@ -955,6 +955,15 @@ export default function Dashboard() {
           </dl>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <div className="space-y-6">
+      <div className="rounded border-2 border-amber-600 bg-amber-100 p-3 font-bold text-black">EXPORT_BRANCH_TEST</div>
+      <DashboardContent />
     </div>
   );
 }
