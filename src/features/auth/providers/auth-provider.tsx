@@ -11,6 +11,7 @@ import {
 import type { Session, User as AuthUser } from '@supabase/supabase-js';
 
 import { supabase, SupabaseError } from '@/lib/supabase/client';
+import { hierarchyRole } from '@/features/auth/hierarchy';
 import type {
   CompanyRow,
   RoleRow,
@@ -127,6 +128,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (requestId !== requestIdRef.current) return;
 
       const profileRow = profile as unknown as UserRow;
+      if (profileRow.status !== 'active' || profileRow.deleted_at) {
+        throw new Error('Your workspace access is disabled. Contact your administrator.');
+      }
       setUser(profileRow);
 
       // Platform admins may legitimately have no tenant.
@@ -139,7 +143,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         if (companyError) throw companyError;
         if (requestId !== requestIdRef.current) return;
-        setCompany((companyRow as unknown as CompanyRow) ?? null);
+        const resolvedCompany = (companyRow as unknown as CompanyRow) ?? null;
+        if (!resolvedCompany?.is_active || resolvedCompany.deleted_at) {
+          throw new Error('This company is unavailable. Contact your administrator.');
+        }
+        setCompany(resolvedCompany);
       } else {
         setCompany(null);
       }
@@ -169,6 +177,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         .map((a) => a.role_id);
 
       if (roleIds.length === 0) {
+        if (!profileRow.is_platform_admin) {
+          throw new Error('No active workspace role. Contact your administrator.');
+        }
         setRoles([]);
         return;
       }
@@ -179,7 +190,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         .is('deleted_at', null);
       if (roleError) throw roleError;
       if (requestId !== requestIdRef.current) return;
-      setRoles((roleRows as unknown as RoleRow[]) ?? []);
+      const resolvedRoles = (roleRows as unknown as RoleRow[]) ?? [];
+      if (['conflict', 'legacy'].includes(hierarchyRole(profileRow, resolvedRoles))) {
+        throw new Error('Workspace roles require administrator review before access can continue.');
+      }
+      setRoles(resolvedRoles);
     } catch (caught) {
       if (requestId !== requestIdRef.current) return;
       // A failed load must not leave a half-populated identity behind.
