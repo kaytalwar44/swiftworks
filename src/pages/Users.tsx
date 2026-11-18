@@ -5,6 +5,7 @@ import { useAuth } from '@/features/auth/providers/auth-provider';
 import { assignableRoles, ROLE_LABELS, type HierarchyRole } from '@/features/auth/hierarchy';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ExportButton } from '@/components/shared/export-button';
 
 type ManagedUser = {
   id: string;
@@ -13,6 +14,9 @@ type ManagedUser = {
   status: string;
   role_code: HierarchyRole;
   can_manage: boolean;
+  company_name: string;
+  created_at: string | null;
+  last_login: string | null;
 };
 type Snapshot = {
   actor_role: HierarchyRole;
@@ -25,6 +29,12 @@ type Snapshot = {
 // been refreshed from production; keep this narrow RPC boundary explicit.
 const rpc = (name: string, args: Record<string, unknown> = {}) =>
   (supabase as any).rpc(name, args);
+
+function displayDate(value: string | null, fallback: string): string {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Unavailable' : date.toLocaleString('en-AU');
+}
 
 export default function Users() {
   const { user, company, refresh } = useAuth();
@@ -197,13 +207,21 @@ export default function Users() {
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2"><UserCog className="h-5 w-5" />Company users</CardTitle></CardHeader>
             <CardContent className="overflow-x-auto">
+              <ExportButton name="swiftworks-users" disabled={loading || busy}
+                headers={['Name', 'Email', 'Company', 'Role', 'Status', 'Created Date', 'Last Login']}
+                rows={snapshot.users.map((target) => [target.full_name, target.email, target.company_name,
+                  ROLE_LABELS[target.role_code] ?? 'Review required',
+                  target.status === 'active' ? 'Active' : 'Inactive',
+                  target.created_at ?? '', target.last_login ?? 'Never'])} />
               <table className="w-full text-left text-sm">
-                <thead><tr className="border-b"><th className="p-2">User</th><th className="p-2">Role</th><th className="p-2">Status</th><th className="p-2">Access</th></tr></thead>
+                <thead><tr className="border-b">{['Name', 'Email', 'Company', 'Role', 'Status', 'Created Date', 'Last Login', 'Access'].map((heading) => <th key={heading} className="p-2">{heading}</th>)}</tr></thead>
                 <tbody>{snapshot.users.map((target) => {
                   const editable = target.can_manage && target.id !== user?.id;
                   return (
                     <tr key={target.id} className="border-b">
-                      <td className="p-2">{target.full_name || target.email}<div className="text-xs text-muted-foreground">{target.email}</div></td>
+                      <td className="p-2">{target.full_name || '—'}</td>
+                      <td className="p-2">{target.email}</td>
+                      <td className="p-2">{target.company_name}</td>
                       <td className="p-2">{editable ? (
                         <select value={target.role_code} disabled={busy}
                           aria-label={`Role for ${target.email}`}
@@ -214,10 +232,12 @@ export default function Users() {
                           {choices.map((value) => <option key={value} value={value}>{ROLE_LABELS[value]}</option>)}
                         </select>
                       ) : ROLE_LABELS[target.role_code] ?? 'Review required'}</td>
-                      <td className="p-2">{target.status}</td>
+                      <td className="p-2">{target.status === 'active' ? 'Active' : 'Inactive'}</td>
+                      <td className="p-2">{displayDate(target.created_at, 'Unavailable')}</td>
+                      <td className="p-2">{displayDate(target.last_login, 'Never')}</td>
                       <td className="p-2">{editable && (
                         <Button variant="outline" disabled={busy} onClick={() => void update(target, null, target.status === 'active' ? 'disabled' : 'active')}>
-                          {target.status === 'active' ? 'Disable' : 'Restore'}
+                          {target.status === 'active' ? 'Set inactive' : 'Set active'}
                         </Button>
                       )}</td>
                     </tr>

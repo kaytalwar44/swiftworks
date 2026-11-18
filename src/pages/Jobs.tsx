@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase/client';
+import { ExportButton } from '@/components/shared/export-button';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -851,6 +852,11 @@ export default function Jobs() {
       <Card>
         <CardHeader>
           <CardTitle>Job List</CardTitle>
+          <ExportButton name="swiftworks-jobs" disabled={loading}
+            headers={['Job Number', 'Title', 'Reference', 'Status', 'Priority', 'Site Name', 'Address', 'Suburb', 'State', 'Postcode', 'Start Date', 'End Date', 'Units']}
+            rows={jobs.map((job) => [job.job_number, job.title, job.reference, job.status,
+              job.priority, job.site_name, [job.address_line1, job.address_line2].filter(Boolean).join(', '),
+              job.suburb, job.state, job.postcode, job.start_date, job.end_date, job.unit_count])} />
         </CardHeader>
 
         <CardContent>

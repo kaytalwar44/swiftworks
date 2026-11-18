@@ -87,6 +87,10 @@ def main():
             passed += 1
             print("PASS: hierarchy refuses deployment without Critical flag protection")
             setup(ROOT / "supabase/migrations/202611150001_phase1_critical_security.sql", True)
+            missing_hierarchy = sql((ROOT / "supabase/migrations/202611170001_exports_invitation_user_management.sql").read_text())
+            assert missing_hierarchy.returncode and "Hierarchy migration must be installed first" in missing_hierarchy.stderr
+            passed += 1
+            print("PASS: enhancement refuses deployment before hierarchy")
             protected = ["booking_link_job(text)", "booking_slots(text,date)",
                          "booking_create(text,uuid,text,text,text,text)", "job_assign_technician(uuid,uuid)"]
             definitions = {name: setup(f"select pg_get_functiondef('public.{name}'::regprocedure);") for name in protected}
@@ -105,6 +109,7 @@ def main():
                 passed += 1
                 print("PASS: unsupported deployment contract aborts and rolls back:", expected_error)
             setup(migration, True)
+            setup(ROOT / "supabase/migrations/202611170001_exports_invitation_user_management.sql", True)
             for name, definition in definitions.items():
                 assert definition == setup(f"select pg_get_functiondef('public.{name}'::regprocedure);")
                 print("PASS: existing synthetic public/allocation definition unchanged:", name)
@@ -247,6 +252,60 @@ def main():
                   "select public.hierarchy_snapshot()->>'actor_role';", "admin", 12)
             check("anonymous hierarchy management denied",
                   "select public.hierarchy_snapshot();", denied=True, role="anon")
+            setup(f"update auth.users set last_sign_in_at='2026-11-17T01:02:03Z' where id={uid(3)};")
+            check("snapshot includes company and creation date",
+                  "select bool_and(u ? 'company_name' and u ? 'created_at' and u ? 'last_login') "
+                  "from jsonb_array_elements(public.hierarchy_snapshot()->'users') u;", "t", 2)
+            check("last login is real Auth timestamp",
+                  f"select (u->>'last_login')::timestamptz='2026-11-17T01:02:03Z'::timestamptz "
+                  f"from jsonb_array_elements(public.hierarchy_snapshot({c1})->'users') u where u->>'id'={uid(3)}::text;",
+                  "t", 2)
+            check("never-signed-in user has null timestamp",
+                  f"select u->>'last_login' is null from jsonb_array_elements(public.hierarchy_snapshot({c1})->'users') u "
+                  f"where u->>'id'={uid(4)}::text;", "t", 2)
+            check("browser cannot query auth users", "select * from auth.users;", user=3, denied=True)
+            check("direct public signup denied without invitation",
+                  f"insert into auth.users(id,email) values({uid(99)},'invite-only@example.test');",
+                  role=None, denied=True)
+            check("forged platform metadata cannot bypass signup gate",
+                  f"""insert into auth.users(id,email,raw_user_meta_data) values({uid(99)},'invite-only@example.test',
+                  '{{"is_platform_admin":true,"invitation_token":"forged"}}');""", role=None, denied=True)
+            gate_token = check("create signup invitation through existing Admin RPC",
+                  f"select token from public.hierarchy_invite({c1},'invite-only@example.test','technician');", user=3)
+            def signup(email="invite-only@example.test", token=gate_token):
+                return (f"insert into auth.users(id,email,email_confirmed_at,raw_user_meta_data) values("
+                        f"{uid(99)},'{email}',null,jsonb_build_object('invitation_token','{token}',"
+                        f"'company_id',{c2},'is_platform_admin',true));")
+            check("wrong-email invitation cannot register", signup("other@example.test"), role=None, denied=True)
+            setup(f"update public.user_invitations set expires_at=now()-interval '1 second' where token='{gate_token}';")
+            check("expired invitation cannot register", signup(), role=None, denied=True)
+            setup(f"update public.user_invitations set expires_at=now()+interval '1 day',revoked_at=now() where token='{gate_token}';")
+            check("revoked invitation cannot register", signup(), role=None, denied=True)
+            setup(f"update public.user_invitations set revoked_at=null where token='{gate_token}';")
+            check("disable issuer", f"select public.hierarchy_set_user({uid(3)},null,'disabled');", user=2)
+            check("disabled issuer cannot authorize signup", signup(), role=None, denied=True)
+            check("restore issuer", f"select public.hierarchy_set_user({uid(3)},null,'active');", user=2)
+            setup(f"update public.companies set is_active=false where id={c1};")
+            check("inactive company cannot authorize signup", signup(), role=None, denied=True)
+            setup(f"update public.companies set is_active=true where id={c1};")
+            check("valid invitation permits Auth account creation", signup(), role=None)
+            check("signup token is removed before metadata persistence",
+                  f"select not(raw_user_meta_data ? 'invitation_token') from auth.users where id={uid(99)};", "t", role=None)
+            check("signup does not assign company from untrusted metadata",
+                  f"select count(*) from public.users where id={uid(99)};", "0", role=None)
+            check("email must still be verified before joining company",
+                  f"select public.accept_invitation('{gate_token}');", user=99, denied=True)
+            setup(f"update auth.users set email_confirmed_at=now() where id={uid(99)};")
+            check("accept invitation uses existing membership path",
+                  f"select public.accept_invitation('{gate_token}')={uid(99)};", "t", 99)
+            check("company and platform flag ignore forged metadata",
+                  f"select company_id={c1} and not is_platform_admin from public.users where id={uid(99)};", "t", role=None)
+            check("accepted invitation cannot create another identity",
+                  signup("invite-only@example.test"), role=None, denied=True)
+            setup(ROOT / "supabase/migrations/202611170001_exports_invitation_user_management.sql", True)
+            check("enhancement rerun preserves invite-only gate",
+                  f"insert into auth.users(id,email) values({uid(98)},'raw-signup@example.test');",
+                  role=None, denied=True)
             print(f"Hierarchy database tests passed: {passed}")
         finally:
             result = command(["pg_ctl", "-D", str(data), "-m", "fast", "-w", "stop"])
