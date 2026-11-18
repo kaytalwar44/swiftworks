@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 
 import { useAuth } from '@/features/auth/providers/auth-provider';
+import { hierarchyRole } from '@/features/auth/hierarchy';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps {
@@ -126,7 +127,8 @@ const SECTIONS: NavSection[] = [
 ];
 
 export function Sidebar({ onNavigate }: SidebarProps) {
-  const { hasPermission, hasRole } = useAuth();
+  const { hasPermission, hasRole, user, roles } = useAuth();
+  const canManageUsers = ['ultra_admin', 'owner', 'admin'].includes(hierarchyRole(user, roles));
 
   const isTechnician = hasRole('technician');
 
@@ -141,7 +143,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         // shown a heading with nothing beneath it.
         const visible = section.items.filter(
           (item) =>
-            (!item.permission || hasPermission(item.permission)) &&
+            (item.to === '/users' ? canManageUsers : !item.permission || hasPermission(item.permission)) &&
             !(item.operatorOnly && isTechnician),
         );
         if (visible.length === 0) return null;
