@@ -40,13 +40,9 @@ export default function JobCreatePage() {
 
     async function loadPartners(tenantId: string, userId: string) {
       try {
-        const { data, error: failure } = await supabase
-          .from('partners')
-          .select('id, company_id, name')
-          .eq('company_id', tenantId)
-          .is('deleted_at', null)
-          .order('name')
-          .order('id');
+        // This narrowly scoped RPC supports company Admins without granting
+        // partners.read or broadening direct partner-table RLS.
+        const { data, error: failure } = await (supabase as any).rpc('job_partner_options');
         if (failure) throw failure;
         if (!current) return;
         // Keep the UI tenant-scoped even if a broader response is ever returned.
