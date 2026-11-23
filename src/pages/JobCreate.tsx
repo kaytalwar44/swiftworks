@@ -1,8 +1,16 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 
 import { useAuth } from '@/features/auth/providers/auth-provider';
 import { supabase } from '@/lib/supabase/client';
+
+type JobPartner = { id: string; company_id: string; name: string | null };
+type PartnerOptions = {
+  companyId: string;
+  userId: string;
+  rows: JobPartner[];
+  error: string | null;
+};
 
 export default function JobCreatePage() {
   const navigate = useNavigate();
@@ -12,6 +20,51 @@ export default function JobCreatePage() {
     user.company_id && company?.id === user.company_id
       ? user.company_id
       : null;
+  const authUserId = authUser?.id ?? null;
+  const [partnerOptions, setPartnerOptions] = useState<PartnerOptions | null>(null);
+  const [selectedPartnerId, setSelectedPartnerId] = useState('');
+  const currentPartnerOptions =
+    partnerOptions?.companyId === companyId && partnerOptions?.userId === authUserId
+      ? partnerOptions
+      : null;
+  const partners = currentPartnerOptions?.rows ?? [];
+  const partnersLoading = !!companyId && !currentPartnerOptions;
+  const partnerLoadError = currentPartnerOptions?.error ?? null;
+  const selectedPartner = partners.find((partner) => partner.id === selectedPartnerId);
+
+  useEffect(() => {
+    let current = true;
+    setPartnerOptions(null);
+    setSelectedPartnerId('');
+    if (!companyId || !authUserId) return;
+
+    async function loadPartners(tenantId: string, userId: string) {
+      try {
+        const { data, error: failure } = await supabase
+          .from('partners')
+          .select('id, company_id, name')
+          .eq('company_id', tenantId)
+          .is('deleted_at', null)
+          .order('name')
+          .order('id');
+        if (failure) throw failure;
+        if (!current) return;
+        // Keep the UI tenant-scoped even if a broader response is ever returned.
+        const rows = ((data ?? []) as unknown as JobPartner[])
+          .filter((partner) => partner.company_id === tenantId);
+        setPartnerOptions({ companyId: tenantId, userId, rows, error: null });
+        setSelectedPartnerId(rows[0]?.id ?? '');
+      } catch {
+        if (!current) return;
+        setPartnerOptions({
+          companyId: tenantId, userId, rows: [],
+          error: 'Unable to load partners for your company. Please reload and try again.',
+        });
+      }
+    }
+    void loadPartners(companyId, authUserId);
+    return () => { current = false; };
+  }, [companyId, authUserId]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +97,14 @@ export default function JobCreatePage() {
       return;
     }
 
+    if (partnersLoading || partnerLoadError || !selectedPartner) {
+      setError(partnerLoadError ?? (partnersLoading
+        ? 'Wait for your company partners to finish loading.'
+        : 'Select a partner belonging to your company. If none exists, create a company partner first.'));
+      setLoading(false);
+      return;
+    }
+
     // jobs.start_date and end_date are NOT NULL with no default, so an insert
     // without them fails at the database even when the form looks complete.
     if (!startDate || !endDate) {
@@ -63,7 +124,7 @@ export default function JobCreatePage() {
       .insert([
         {
           company_id: companyId,
-          partner_id: '761d03bf-e6ba-46cf-8f0e-037fdeb908cd',
+          partner_id: selectedPartner.id,
 
           job_number: jobNumber,
           title,
@@ -107,6 +168,35 @@ export default function JobCreatePage() {
         onSubmit={handleSubmit}
         className="space-y-6 rounded-lg border p-6"
       >
+        <div className="space-y-2">
+          <label htmlFor="job-partner" className="block text-sm font-medium">
+            Partner
+          </label>
+          <select
+            id="job-partner"
+            className="w-full rounded border p-2"
+            value={selectedPartner?.id ?? ''}
+            onChange={(event) => setSelectedPartnerId(event.target.value)}
+            disabled={loading || !companyId || partnersLoading || !!partnerLoadError || partners.length === 0}
+            required
+          >
+            <option value="" disabled>
+              {partnersLoading ? 'Loading partners...' : 'Select a partner'}
+            </option>
+            {partners.map((partner) => (
+              <option key={partner.id} value={partner.id}>
+                {partner.name || 'Unnamed Partner'}
+              </option>
+            ))}
+          </select>
+          {partnerLoadError && <p role="alert" className="text-sm text-destructive">{partnerLoadError}</p>}
+          {companyId && !partnersLoading && !partnerLoadError && partners.length === 0 && (
+            <p role="alert" className="text-sm text-destructive">
+              No partners exist for your company. Create a company partner before creating a job.
+            </p>
+          )}
+        </div>
+
         <div>
           <h2 className="mb-4 text-lg font-semibold">Job Details</h2>
 
@@ -260,7 +350,7 @@ export default function JobCreatePage() {
         <div className="flex gap-3">
           <button
             type="submit"
-            disabled={loading || !companyId}
+            disabled={loading || !companyId || partnersLoading || !!partnerLoadError || !selectedPartner}
             className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
           >
             {loading ? 'Creating...' : 'Create Job'}

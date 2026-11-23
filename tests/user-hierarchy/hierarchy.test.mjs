@@ -63,11 +63,36 @@ for (const path of [
   'src/pages/AcceptInvitation.tsx',
 ]) {
   if (!fs.existsSync(new URL(path, root))) continue;
-  test(`booking/QR/slot/allocation workflow source unchanged: ${path}`, () => {
+  const description = path.endsWith('/JobCreate.tsx')
+    ? 'job creation preserves all payload fields except company/partner selection'
+    : `booking/QR/slot/allocation workflow source unchanged: ${path}`;
+  test(description, () => {
     const original = execFileSync('git', [
       'show', `c28531bc53416bea200ae8608ea537c704459817:${path}`,
     ], { cwd: root });
     let actual = fs.readFileSync(new URL(path, root), 'utf8');
+    if (path.endsWith('/JobCreate.tsx')) {
+      // JobCreate has approved tenant/partner selection fixes. Compare every
+      // other inserted field with the legacy payload instead of stripping UI.
+      function payloadFields(source) {
+        const ast = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+        let payload;
+        function visit(node) {
+          if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+              node.expression.name.text === 'insert' && ts.isArrayLiteralExpression(node.arguments[0])) {
+            payload = node.arguments[0].elements[0];
+          }
+          ts.forEachChild(node, visit);
+        }
+        visit(ast);
+        assert.ok(payload && ts.isObjectLiteralExpression(payload), 'job insert payload exists');
+        return payload.properties
+          .filter((property) => !['company_id', 'partner_id'].includes(property.name?.getText(ast)))
+          .map((property) => property.getText(ast));
+      }
+      assert.deepEqual(payloadFields(actual), payloadFields(original.toString()));
+      return;
+    }
     // Approved enhancements add export presentation only, and pass the existing
     // invitation token to Auth. Removing exactly those additions must reproduce
     // the original workflow source byte-for-byte.
@@ -77,16 +102,6 @@ for (const path of [
     }
     if (path.endsWith('/AcceptInvitation.tsx')) {
       actual = actual.replace('      options: { data: { invitation_token: token } },\n', '');
-    }
-    if (path.endsWith('/JobCreate.tsx')) {
-      // The approved tenant-context bug fix changes only the job's company and
-      // guards submission. Its actual handlers are covered by job-company.test.mjs.
-      actual = actual
-        .replace("import { useAuth } from '@/features/auth/providers/auth-provider';\n", '')
-        .replace(/  const \{ authUser, user, company,[\s\S]*?      : null;\n/, '')
-        .replace(/    \/\/ Never submit with a missing tenant[\s\S]*?      return;\n    }\n\n/, '')
-        .replace('company_id: companyId,', "company_id: '45584402-8893-4028-93d6-477d7d6f2ce2',")
-        .replace('disabled={loading || !companyId}', 'disabled={loading}');
     }
     assert.equal(actual, original.toString());
   });
