@@ -306,6 +306,8 @@ def main():
             check("enhancement rerun preserves invite-only gate",
                   f"insert into auth.users(id,email) values({uid(98)},'raw-signup@example.test');",
                   role=None, denied=True)
+            from default_partner_checks import run
+            run(setup, check, sql, uid, ROOT)
             print(f"Hierarchy database tests passed: {passed}")
         finally:
             result = command(["pg_ctl", "-D", str(data), "-m", "fast", "-w", "stop"])

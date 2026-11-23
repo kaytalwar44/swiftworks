@@ -77,21 +77,14 @@ function harness(context = identity(), insertError = null, partnerLoader = () =>
       };
       if (name === '@/lib/supabase/client') return {
         supabase: {
+          async rpc(name, args) {
+            assert.equal(name, 'job_partner_options');
+            assert.equal(args, undefined, 'caller cannot supply a different company');
+            const query = { rpc: name, companyId: context.user?.company_id };
+            partnerQueries.push(query);
+            return partnerLoader(query);
+          },
           from(table) {
-            if (table === 'partners') {
-              const query = { table, filters: [], ordering: [] };
-              partnerQueries.push(query);
-              const builder = {
-                select(columns) { query.columns = columns; return builder; },
-                eq(column, value) { query.filters.push([column, value]); return builder; },
-                is(column, value) { query.filters.push([column, value]); return builder; },
-                order(column) { query.ordering.push(column); return builder; },
-                then(resolve, reject) {
-                  return Promise.resolve().then(() => partnerLoader(query)).then(resolve, reject);
-                },
-              };
-              return builder;
-            }
             assert.equal(table, 'jobs');
             return {
               async insert(rows) {
@@ -225,15 +218,12 @@ test('required date validation still blocks inserts', async () => {
   assert.equal(page.alert(), 'Start date and end date are required.');
 });
 
-test('partner lookup is explicitly scoped to the authenticated company', async () => {
+test('partner lookup uses the caller-scoped picker RPC without a company override', async () => {
   const page = harness();
   await page.ready();
   assert.equal(page.partnerQueries.length, 1);
-  assert.deepEqual(page.partnerQueries[0].filters, [
-    ['company_id', testTelco], ['deleted_at', null],
-  ]);
-  assert.equal(page.partnerQueries[0].columns, 'id, company_id, name');
-  assert.deepEqual(page.partnerQueries[0].ordering, ['name', 'id']);
+  assert.equal(page.partnerQueries[0].rpc, 'job_partner_options');
+  assert.equal(page.partnerQueries[0].companyId, testTelco);
 });
 
 test('only own-company partners render, even with a broader query response', async () => {
@@ -341,7 +331,7 @@ test('late response from the previous company cannot replace new partners', asyn
   let resolveOld;
   const oldRequest = new Promise((resolve) => { resolveOld = resolve; });
   const page = harness(identity(ausstech), null, (query) =>
-    query.filters[0][1] === ausstech ? oldRequest : { data: partnerRows, error: null });
+    query.companyId === ausstech ? oldRequest : { data: partnerRows, error: null });
   page.fill();
   await page.ready();
   page.setContext(identity(testTelco));
