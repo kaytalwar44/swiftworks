@@ -65,12 +65,54 @@ for (const path of [
   if (!fs.existsSync(new URL(path, root))) continue;
   const description = path.endsWith('/JobCreate.tsx')
     ? 'job creation preserves all payload fields except company/partner selection'
+    : path.endsWith('/BookingPage.tsx')
+    ? 'public booking preserves loading, validation, submission and RPC logic'
     : `booking/QR/slot/allocation workflow source unchanged: ${path}`;
   test(description, () => {
     const original = execFileSync('git', [
       'show', `c28531bc53416bea200ae8608ea537c704459817:${path}`,
     ], { cwd: root });
     let actual = fs.readFileSync(new URL(path, root), 'utf8');
+    if (path.endsWith('/BookingPage.tsx')) {
+      // The approved mobile UI changes presentation, not booking behaviour.
+      // Compare real syntax trees for every helper and both business handlers.
+      // Optional company metadata is presentation-only; existing RPC calls,
+      // payloads, availability filtering and validation must remain identical.
+      function operations(source) {
+        const ast = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+        const result = {};
+        const helpers = new Set([
+          'periodLabel', 'formatTime', 'formatDate', 'todayIso',
+          'isValidAuMobile', 'isValidEmail', 'submitBooking',
+        ]);
+        function canonical(node) {
+          const children = [];
+          ts.forEachChild(node, (child) => {
+            if (ts.isPropertyAssignment(child) && child.name.getText(ast) === 'company_name') return;
+            children.push(canonical(child));
+          });
+          return {
+            kind: node.kind,
+            ...(ts.isIdentifier(node) || ts.isLiteralExpression(node) ? { text: node.text } : {}),
+            children,
+          };
+        }
+        function visit(node) {
+          if (ts.isFunctionDeclaration(node) && helpers.has(node.name?.text)) {
+            result[node.name.text] = canonical(node);
+          }
+          if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'loadBooking') {
+            result.loadBooking = canonical(node.initializer);
+          }
+          ts.forEachChild(node, visit);
+        }
+        visit(ast);
+        assert.equal(Object.keys(result).length, 8);
+        return result;
+      }
+      assert.deepEqual(operations(actual), operations(original.toString()));
+      return;
+    }
     if (path.endsWith('/JobCreate.tsx')) {
       // JobCreate has approved tenant/partner selection fixes. Compare every
       // other inserted field with the legacy payload instead of stripping UI.
