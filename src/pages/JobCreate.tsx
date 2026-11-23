@@ -1,10 +1,17 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 
+import { useAuth } from '@/features/auth/providers/auth-provider';
 import { supabase } from '@/lib/supabase/client';
 
 export default function JobCreatePage() {
   const navigate = useNavigate();
+  const { authUser, user, company, isLoading: isAuthLoading, error: authError } = useAuth();
+  const companyId =
+    !isAuthLoading && !authError && authUser && user?.id === authUser.id &&
+    user.company_id && company?.id === user.company_id
+      ? user.company_id
+      : null;
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +37,13 @@ export default function JobCreatePage() {
     setLoading(true);
     setError(null);
 
+    // Never submit with a missing tenant or a stale profile/company from another session.
+    if (!companyId) {
+      setError('Your company context is unavailable. Please sign in again before creating a job.');
+      setLoading(false);
+      return;
+    }
+
     // jobs.start_date and end_date are NOT NULL with no default, so an insert
     // without them fails at the database even when the form looks complete.
     if (!startDate || !endDate) {
@@ -48,7 +62,7 @@ export default function JobCreatePage() {
       .from('jobs')
       .insert([
         {
-          company_id: '45584402-8893-4028-93d6-477d7d6f2ce2',
+          company_id: companyId,
           partner_id: '761d03bf-e6ba-46cf-8f0e-037fdeb908cd',
 
           job_number: jobNumber,
@@ -246,7 +260,7 @@ export default function JobCreatePage() {
         <div className="flex gap-3">
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !companyId}
             className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
           >
             {loading ? 'Creating...' : 'Create Job'}

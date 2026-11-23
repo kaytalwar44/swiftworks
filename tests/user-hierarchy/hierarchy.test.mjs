@@ -78,6 +78,16 @@ for (const path of [
     if (path.endsWith('/AcceptInvitation.tsx')) {
       actual = actual.replace('      options: { data: { invitation_token: token } },\n', '');
     }
+    if (path.endsWith('/JobCreate.tsx')) {
+      // The approved tenant-context bug fix changes only the job's company and
+      // guards submission. Its actual handlers are covered by job-company.test.mjs.
+      actual = actual
+        .replace("import { useAuth } from '@/features/auth/providers/auth-provider';\n", '')
+        .replace(/  const \{ authUser, user, company,[\s\S]*?      : null;\n/, '')
+        .replace(/    \/\/ Never submit with a missing tenant[\s\S]*?      return;\n    }\n\n/, '')
+        .replace('company_id: companyId,', "company_id: '45584402-8893-4028-93d6-477d7d6f2ce2',")
+        .replace('disabled={loading || !companyId}', 'disabled={loading}');
+    }
     assert.equal(actual, original.toString());
   });
 }
