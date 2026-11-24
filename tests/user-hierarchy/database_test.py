@@ -308,6 +308,8 @@ def main():
                   role=None, denied=True)
             from default_partner_checks import run
             run(setup, check, sql, uid, ROOT)
+            from subcontractor_link_checks import run as run_subcontractor_link_checks
+            run_subcontractor_link_checks(setup, check, sql, uid, ROOT)
             print(f"Hierarchy database tests passed: {passed}")
         finally:
             result = command(["pg_ctl", "-D", str(data), "-m", "fast", "-w", "stop"])
