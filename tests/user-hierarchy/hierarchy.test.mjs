@@ -142,6 +142,22 @@ for (const path of [
       actual = actual.replace("import { ExportButton } from '@/components/shared/export-button';\n", '')
         .replace(/^          <ExportButton[\s\S]*? \/>\n/m, '');
     }
+    if (path.endsWith('/Jobs.tsx')) {
+      // Only the approved eligibility read is replaced. Allocation writes,
+      // existing-assignment selection, slots, QR and booking code stay exact.
+      const picker = `    // Keep technician IDs/allocation unchanged; scope active accounts to this job.
+    const techRes = await (supabase as any).rpc('job_assignable_technicians', {
+      p_company_id: job.company_id,
+    });`;
+      assert.ok(actual.includes(picker), 'assignment candidates use the job company');
+      actual = actual.replace(picker, `    // Available technicians only, and not soft-deleted.
+    const techRes = await (supabase as any)
+      .from('technicians')
+      .select('id, full_name, code')
+      .eq('is_available', true)
+      .is('deleted_at', null)
+      .order('full_name');`);
+    }
     if (path.endsWith('/AcceptInvitation.tsx')) {
       actual = actual.replace('      options: { data: { invitation_token: token } },\n', '');
     }

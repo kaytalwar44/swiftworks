@@ -615,13 +615,10 @@ export default function Jobs() {
     setAssignTechnicianId('');
     setAssignLoading(true);
 
-    // Available technicians only, and not soft-deleted.
-    const techRes = await (supabase as any)
-      .from('technicians')
-      .select('id, full_name, code')
-      .eq('is_available', true)
-      .is('deleted_at', null)
-      .order('full_name');
+    // Keep technician IDs/allocation unchanged; scope active accounts to this job.
+    const techRes = await (supabase as any).rpc('job_assignable_technicians', {
+      p_company_id: job.company_id,
+    });
 
     if (techRes.error) {
       setAssignLoading(false);
